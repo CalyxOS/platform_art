@@ -42,6 +42,7 @@ public class Main {
         ensureJitCompiled(TwoPath.class, "twoPath");
         ensureJitCompiled(Class.forName("OK"), "runNoMonitors");
         ensureJitCompiled(Class.forName("OK"), "runStraightLine");
+        ensureJitCompiled(Class.forName("OK"), "runStraightLine2");
         ensureJitCompiled(Class.forName("OK"), "runBalancedJoin");
         ensureJitCompiled(Class.forName("NullLocks"), "run");
 

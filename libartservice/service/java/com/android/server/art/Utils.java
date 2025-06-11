@@ -16,11 +16,14 @@
 
 package com.android.server.art;
 
+import static android.app.ActivityManager.RunningAppProcessInfo;
+
 import static com.android.server.art.ProfilePath.TmpProfilePath;
 
 import android.R;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.app.ActivityManager;
 import android.app.role.RoleManager;
 import android.apphibernation.AppHibernationManager;
 import android.content.Context;
@@ -33,6 +36,7 @@ import android.os.ServiceSpecificException;
 import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.os.Trace;
+import android.os.UserHandle;
 import android.os.UserManager;
 import android.text.TextUtils;
 import android.util.Log;
@@ -58,17 +62,18 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Future;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 
 /** @hide */
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
@@ -138,7 +143,7 @@ public final class Utils {
                         -> Abi.create(name, VMRuntime.getInstructionSet(name),
                                 name.equals(pkgPrimaryAbi.name())))
                 .sorted(Comparator.comparing(Abi::isPrimaryAbi).reversed())
-                .collect(Collectors.toList());
+                .toList();
     }
 
     @NonNull
@@ -198,6 +203,14 @@ public final class Utils {
     public static boolean isNativeAbi(@NonNull String abiName) {
         return abiName.equals(Constants.getNative64BitAbi())
                 || abiName.equals(Constants.getNative32BitAbi());
+    }
+
+    public static List<String> getNativeIsas() {
+        return Arrays.asList(Constants.getNative64BitAbi(), Constants.getNative32BitAbi())
+                .stream()
+                .filter(Objects::nonNull)
+                .map(VMRuntime::getInstructionSet)
+                .toList();
     }
 
     /**
@@ -512,6 +525,21 @@ public final class Utils {
         int pos = path.lastIndexOf('.');
         int slashPos = path.indexOf('/', pos);
         return ((pos != -1 && slashPos == -1) ? path.substring(0, pos) : path) + newExtension;
+    }
+
+    public static List<RunningAppProcessInfo> getRunningProcessInfoForPackage(
+            @NonNull ActivityManager am, @NonNull PackageState pkgState) {
+        return am.getRunningAppProcesses()
+                .stream()
+                .filter(info -> UserHandle.getAppId(info.uid) == pkgState.getAppId())
+                .filter(info
+                        -> Arrays.stream(info.pkgList)
+                                .anyMatch(name -> name.equals(pkgState.getPackageName())))
+                // Filter by importance to only include running processes.
+                // The intention of this filter is to filter out `IMPORTANCE_CACHED`. Cached
+                // processes can be frozen by Cached apps freezer and don't respond to signals.
+                .filter(info -> info.importance <= RunningAppProcessInfo.IMPORTANCE_SERVICE)
+                .toList();
     }
 
     @AutoValue

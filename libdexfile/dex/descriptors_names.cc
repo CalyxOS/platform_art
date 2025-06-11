@@ -193,21 +193,22 @@ std::string MangleForJni(const std::string& s) {
   return result;
 }
 
-std::string DotToDescriptor(const char* class_name) {
+std::string DotToDescriptor(std::string_view class_name) {
   std::string descriptor(class_name);
   std::replace(descriptor.begin(), descriptor.end(), '.', '/');
   if (descriptor.length() > 0 && descriptor[0] != '[') {
-    descriptor = "L" + descriptor + ";";
+    descriptor.insert(descriptor.begin(), 'L');
+    descriptor.insert(descriptor.end(), ';');
   }
   return descriptor;
 }
 
-std::string DescriptorToDot(const char* descriptor) {
-  size_t length = strlen(descriptor);
+std::string DescriptorToDot(std::string_view descriptor) {
+  size_t length = descriptor.length();
   if (length > 1) {
     if (descriptor[0] == 'L' && descriptor[length - 1] == ';') {
       // Descriptors have the leading 'L' and trailing ';' stripped.
-      std::string result(descriptor + 1, length - 2);
+      std::string result(descriptor.substr(1, length - 2));
       std::replace(result.begin(), result.end(), '/', '.');
       return result;
     } else {
@@ -218,16 +219,16 @@ std::string DescriptorToDot(const char* descriptor) {
     }
   }
   // Do nothing for non-class/array descriptors.
-  return descriptor;
+  return std::string(descriptor);
 }
 
-std::string DescriptorToName(const char* descriptor) {
-  size_t length = strlen(descriptor);
+std::string DescriptorToName(std::string_view descriptor) {
+  size_t length = descriptor.length();
   if (descriptor[0] == 'L' && descriptor[length - 1] == ';') {
-    std::string result(descriptor + 1, length - 2);
+    std::string result(descriptor.substr(1, length - 2));
     return result;
   }
-  return descriptor;
+  return std::string(descriptor);
 }
 
 // Helper for IsValidPartOfMemberNameUtf8(), a bit vector indicating valid low ascii.

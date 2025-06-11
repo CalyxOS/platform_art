@@ -120,8 +120,8 @@ TEST_F(RegisterLineTest, NewInstanceDexPcsMerging) {
   constexpr size_t kNumRegs = 1u;
   constexpr uint32_t kVReg = 0u;
   ArenaAllocator& allocator = GetArenaAllocator(verifier.get());
-  RegisterLineArenaUniquePtr line1(RegisterLine::Create(kNumRegs, allocator, &reg_types));
-  RegisterLineArenaUniquePtr line2(RegisterLine::Create(kNumRegs, allocator, &reg_types));
+  RegisterLineArenaUniquePtr line1(RegisterLine::Create(kNumRegs, allocator));
+  RegisterLineArenaUniquePtr line2(RegisterLine::Create(kNumRegs, allocator));
   for (const TestCase& test_case : test_cases) {
     ASSERT_TRUE(test_case.reg_type1.IsUninitializedTypes() ||
                 test_case.reg_type2.IsUninitializedTypes());

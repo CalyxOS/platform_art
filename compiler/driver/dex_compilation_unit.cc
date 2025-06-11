@@ -67,9 +67,9 @@ bool DexCompilationUnit::RequiresConstructorBarrier() const {
     // Decoding class data can be slow, so iterate over fields of the compiling class if resolved.
     ScopedObjectAccess soa(Thread::Current());
     ObjPtr<mirror::Class> compiling_class = GetCompilingClass().Get();
-    for (size_t i = 0, size = compiling_class->NumInstanceFields(); i != size; ++i) {
-      ArtField* field = compiling_class->GetInstanceField(i);
-      if (field->IsFinal()) {
+    for (size_t i = 0, size = compiling_class->NumFields(); i != size; ++i) {
+      ArtField* field = compiling_class->GetField(i);
+      if (field->IsFinal() && !field->IsStatic()) {
         return true;
       }
     }

@@ -41,7 +41,7 @@ cc_defaults {
     stl: "c++_static",
     static_libs: [
         "libbase",
-        "libcrypto_for_art",
+        "libcrypto_static", // Not FIPS tested - for SHA-1 checksumming of build ID only.
     ],
 }
 

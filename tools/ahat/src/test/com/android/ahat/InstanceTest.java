@@ -29,10 +29,11 @@ import java.io.IOException;
 import java.util.List;
 import org.junit.Test;
 
-import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -214,6 +215,30 @@ public class InstanceTest {
     AhatInstance obj = dump.getDumpedAhatInstance("anObject");
     assertNotNull(obj);
     assertNull(obj.asString());
+  }
+
+  @Test
+  public void asByteArrayNotByteArray() throws IOException {
+    TestDump dump = TestDump.getTestDump();
+    AhatInstance obj = dump.getDumpedAhatInstance("anObject");
+    assertNotNull(obj);
+    assertNull(obj.asByteArray());
+  }
+
+  @Test
+  public void asByteArrayIsEmptyByteArray() throws IOException {
+    TestDump dump = TestDump.getTestDump();
+    AhatInstance obj = dump.getDumpedAhatInstance("byteEmpty");
+    assertNotNull(obj);
+    assertArrayEquals(obj.asByteArray(), new byte[] {});
+  }
+
+  @Test
+  public void asByteArrayIsSomeByteArray() throws IOException {
+    TestDump dump = TestDump.getTestDump();
+    AhatInstance obj = dump.getDumpedAhatInstance("byteNotString");
+    assertNotNull(obj);
+    assertArrayEquals(obj.asByteArray(), new byte[] {0, 1, 2, 3, 4, 5});
   }
 
   @Test

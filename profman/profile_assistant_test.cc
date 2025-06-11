@@ -825,7 +825,7 @@ TEST_F(ProfileAssistantTest, TestProfileCreationGenerateMethods) {
   std::string expected_contents;
   for (std::string& class_name : class_names) {
     input_file_contents += class_name + std::string("\n");
-    expected_contents += DescriptorToDot(class_name.c_str()) +
+    expected_contents += DescriptorToDot(class_name) +
         std::string("\n");
   }
   std::string output_file_contents;
@@ -923,7 +923,7 @@ TEST_F(ProfileAssistantTest, TestBootImageProfile) {
   std::string input_file_contents = JoinProfileLines(input_data);
 
   ScratchFile preloaded_class_denylist;
-  std::string denylist_content = DescriptorToDot(kPreloadedDenylistedClass.c_str());
+  std::string denylist_content = DescriptorToDot(kPreloadedDenylistedClass);
   EXPECT_TRUE(preloaded_class_denylist.GetFile()->WriteFully(
       denylist_content.c_str(), denylist_content.length()));
 
@@ -940,7 +940,7 @@ TEST_F(ProfileAssistantTest, TestBootImageProfile) {
   std::string expected_profile_content = JoinProfileLines(expected_data);
 
   std::vector<std::string> expected_preloaded_data = {
-       DescriptorToDot(kDirtyClass.c_str())
+       DescriptorToDot(kDirtyClass)
   };
   std::string expected_preloaded_content = JoinProfileLines(expected_preloaded_data);
 

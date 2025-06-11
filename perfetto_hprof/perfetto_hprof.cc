@@ -568,8 +568,9 @@ uint64_t GetObjectId(const art::mirror::Object* obj) {
 
 template <typename F>
 void ForInstanceReferenceField(art::mirror::Class* klass, F fn) NO_THREAD_SAFETY_ANALYSIS {
-  for (art::ArtField& af : klass->GetIFields()) {
-    if (af.IsPrimitiveType() ||
+  for (art::ArtField& af : klass->GetFields()) {
+    if (af.IsStatic() ||
+        af.IsPrimitiveType() ||
         af.GetOffset().Uint32Value() == art::mirror::Object::ClassOffset().Uint32Value()) {
       continue;
     }

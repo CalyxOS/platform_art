@@ -149,11 +149,12 @@ DEFINE_RUNTIME_DEBUG_FLAG(Heap, kStressCollectorTransition);
 // Minimum amount of remaining bytes before a concurrent GC is triggered.
 static constexpr size_t kMinConcurrentRemainingBytes = 128 * KB;
 static constexpr size_t kMaxConcurrentRemainingBytes = 512 * KB;
-// Sticky GC throughput adjustment, divided by 4. Increasing this causes sticky GC to occur more
-// relative to partial/full GC. This may be desirable since sticky GCs interfere less with mutator
-// threads (lower pauses, use less memory bandwidth).
-static double GetStickyGcThroughputAdjustment(bool use_generational_cc) {
-  return use_generational_cc ? 0.5 : 1.0;
+// Sticky GC throughput adjustment. Increasing this causes sticky GC to occur more
+// relative to partial/full GC. This may be desirable since sticky GCs interfere less
+// with mutator threads (lower pauses, use less memory bandwidth). The value
+// (1.0) for non-generational GC case is fixed and shall never change.
+static double GetStickyGcThroughputAdjustment(bool use_generational_gc) {
+  return use_generational_gc ? 0.5 : 1.0;
 }
 // Whether or not we compact the zygote in PreZygoteFork.
 static constexpr bool kCompactZygote = kMovingCollector;
@@ -307,7 +308,7 @@ Heap::Heap(size_t initial_size,
            bool gc_stress_mode,
            bool measure_gc_performance,
            bool use_homogeneous_space_compaction_for_oom,
-           bool use_generational_cc,
+           bool use_generational_gc,
            uint64_t min_interval_homogeneous_space_compaction_by_oom,
            bool dump_region_info_before_gc,
            bool dump_region_info_after_gc)
@@ -375,11 +376,10 @@ Heap::Heap(size_t initial_size,
        * verification is enabled, we limit the size of allocation stacks to speed up their
        * searching.
        */
-      max_allocation_stack_size_(kGCALotMode
-          ? kGcAlotAllocationStackSize
-          : (kVerifyObjectSupport > kVerifyObjectModeFast)
-              ? kVerifyObjectAllocationStackSize
-              : kDefaultAllocationStackSize),
+      max_allocation_stack_size_(kGCALotMode ? kGcAlotAllocationStackSize
+                                 : (kVerifyObjectSupport > kVerifyObjectModeFast)
+                                     ? kVerifyObjectAllocationStackSize
+                                     : kDefaultAllocationStackSize),
       current_allocator_(kAllocatorTypeDlMalloc),
       current_non_moving_allocator_(kAllocatorTypeNonMoving),
       bump_pointer_space_(nullptr),
@@ -408,7 +408,7 @@ Heap::Heap(size_t initial_size,
       pending_collector_transition_(nullptr),
       pending_heap_trim_(nullptr),
       use_homogeneous_space_compaction_for_oom_(use_homogeneous_space_compaction_for_oom),
-      use_generational_cc_(use_generational_cc),
+      use_generational_gc_(use_generational_gc),
       running_collection_is_blocking_(false),
       blocking_gc_count_(0U),
       blocking_gc_time_(0U),
@@ -652,7 +652,7 @@ Heap::Heap(size_t initial_size,
         space::RegionSpace::CreateMemMap(kRegionSpaceName, capacity_ * 2, request_begin);
     CHECK(region_space_mem_map.IsValid()) << "No region space mem map";
     region_space_ = space::RegionSpace::Create(
-        kRegionSpaceName, std::move(region_space_mem_map), use_generational_cc_);
+        kRegionSpaceName, std::move(region_space_mem_map), use_generational_gc_);
     AddSpace(region_space_);
   } else if (IsMovingGc(foreground_collector_type_)) {
     // Create bump pointer spaces.
@@ -778,57 +778,7 @@ Heap::Heap(size_t initial_size,
     concurrent_start_bytes_ = std::numeric_limits<size_t>::max();
   }
   CHECK_NE(target_footprint_.load(std::memory_order_relaxed), 0U);
-  // Create our garbage collectors.
-  for (size_t i = 0; i < 2; ++i) {
-    const bool concurrent = i != 0;
-    if ((MayUseCollector(kCollectorTypeCMS) && concurrent) ||
-        (MayUseCollector(kCollectorTypeMS) && !concurrent)) {
-      garbage_collectors_.push_back(new collector::MarkSweep(this, concurrent));
-      garbage_collectors_.push_back(new collector::PartialMarkSweep(this, concurrent));
-      garbage_collectors_.push_back(new collector::StickyMarkSweep(this, concurrent));
-    }
-  }
-  if (kMovingCollector) {
-    if (MayUseCollector(kCollectorTypeSS) ||
-        MayUseCollector(kCollectorTypeHomogeneousSpaceCompact) ||
-        use_homogeneous_space_compaction_for_oom_) {
-      semi_space_collector_ = new collector::SemiSpace(this);
-      garbage_collectors_.push_back(semi_space_collector_);
-    }
-    if (MayUseCollector(kCollectorTypeCMC)) {
-      mark_compact_ = new collector::MarkCompact(this);
-      garbage_collectors_.push_back(mark_compact_);
-    }
-    if (MayUseCollector(kCollectorTypeCC)) {
-      concurrent_copying_collector_ = new collector::ConcurrentCopying(this,
-                                                                       /*young_gen=*/false,
-                                                                       use_generational_cc_,
-                                                                       "",
-                                                                       measure_gc_performance);
-      if (use_generational_cc_) {
-        young_concurrent_copying_collector_ = new collector::ConcurrentCopying(
-            this,
-            /*young_gen=*/true,
-            use_generational_cc_,
-            "young",
-            measure_gc_performance);
-      }
-      active_concurrent_copying_collector_.store(concurrent_copying_collector_,
-                                                 std::memory_order_relaxed);
-      DCHECK(region_space_ != nullptr);
-      concurrent_copying_collector_->SetRegionSpace(region_space_);
-      if (use_generational_cc_) {
-        young_concurrent_copying_collector_->SetRegionSpace(region_space_);
-        // At this point, non-moving space should be created.
-        DCHECK(non_moving_space_ != nullptr);
-        concurrent_copying_collector_->CreateInterRegionRefBitmaps();
-      }
-      garbage_collectors_.push_back(concurrent_copying_collector_);
-      if (use_generational_cc_) {
-        garbage_collectors_.push_back(young_concurrent_copying_collector_);
-      }
-    }
-  }
+  CreateGarbageCollectors(measure_gc_performance);
   if (!GetBootImageSpaces().empty() && non_moving_space_ != nullptr &&
       (is_zygote || separate_non_moving_space)) {
     // Check that there's no gap between the image space and the non moving space so that the
@@ -866,6 +816,63 @@ Heap::Heap(size_t initial_size,
   }
   if (VLOG_IS_ON(heap) || VLOG_IS_ON(startup)) {
     LOG(INFO) << "Heap() exiting";
+  }
+}
+
+void Heap::CreateGarbageCollectors(bool measure_gc_performance) {
+  for (size_t i = 0; i < 2; ++i) {
+    const bool concurrent = (i != 0);
+    if ((MayUseCollector(kCollectorTypeCMS) && concurrent) ||
+        (MayUseCollector(kCollectorTypeMS) && !concurrent)) {
+      garbage_collectors_.push_back(new collector::MarkSweep(this, concurrent));
+      garbage_collectors_.push_back(new collector::PartialMarkSweep(this, concurrent));
+      garbage_collectors_.push_back(new collector::StickyMarkSweep(this, concurrent));
+    }
+  }
+  if (kMovingCollector) {
+    if (MayUseCollector(kCollectorTypeSS) ||
+        MayUseCollector(kCollectorTypeHomogeneousSpaceCompact) ||
+        use_homogeneous_space_compaction_for_oom_) {
+      semi_space_collector_ = new collector::SemiSpace(this);
+      garbage_collectors_.push_back(semi_space_collector_);
+    }
+    if (MayUseCollector(kCollectorTypeCMC)) {
+      mark_compact_ = new collector::MarkCompact(this);
+      garbage_collectors_.push_back(mark_compact_);
+      if (use_generational_gc_) {
+        young_mark_compact_ = new collector::YoungMarkCompact(this, mark_compact_);
+        garbage_collectors_.push_back(young_mark_compact_);
+      }
+    }
+    if (MayUseCollector(kCollectorTypeCC)) {
+      concurrent_copying_collector_ = new collector::ConcurrentCopying(this,
+                                                                       /*young_gen=*/false,
+                                                                       use_generational_gc_,
+                                                                       "",
+                                                                       measure_gc_performance);
+      if (use_generational_gc_) {
+        young_concurrent_copying_collector_ =
+            new collector::ConcurrentCopying(this,
+                                             /*young_gen=*/true,
+                                             use_generational_gc_,
+                                             "young",
+                                             measure_gc_performance);
+      }
+      active_concurrent_copying_collector_.store(concurrent_copying_collector_,
+                                                 std::memory_order_relaxed);
+      DCHECK(region_space_ != nullptr);
+      concurrent_copying_collector_->SetRegionSpace(region_space_);
+      if (use_generational_gc_) {
+        young_concurrent_copying_collector_->SetRegionSpace(region_space_);
+        // At this point, non-moving space should be created.
+        DCHECK(non_moving_space_ != nullptr);
+        concurrent_copying_collector_->CreateInterRegionRefBitmaps();
+      }
+      garbage_collectors_.push_back(concurrent_copying_collector_);
+      if (use_generational_gc_) {
+        garbage_collectors_.push_back(young_concurrent_copying_collector_);
+      }
+    }
   }
 }
 
@@ -2315,7 +2322,7 @@ void Heap::ChangeCollector(CollectorType collector_type) {
     gc_plan_.clear();
     switch (collector_type_) {
       case kCollectorTypeCC: {
-        if (use_generational_cc_) {
+        if (use_generational_gc_) {
           gc_plan_.push_back(collector::kGcTypeSticky);
         }
         gc_plan_.push_back(collector::kGcTypeFull);
@@ -2327,6 +2334,9 @@ void Heap::ChangeCollector(CollectorType collector_type) {
         break;
       }
       case kCollectorTypeCMC: {
+        if (use_generational_gc_) {
+          gc_plan_.push_back(collector::kGcTypeSticky);
+        }
         gc_plan_.push_back(collector::kGcTypeFull);
         if (use_tlab_) {
           ChangeAllocator(kAllocatorTypeTLAB);
@@ -2568,6 +2578,9 @@ void Heap::PreZygoteFork() {
         region_space_->GetMarkBitmap()->Clear();
       } else {
         bump_pointer_space_->GetMemMap()->Protect(PROT_READ | PROT_WRITE);
+        if (gUseUserfaultfd && use_generational_gc_) {
+          MarkCompactCollector()->ResetGenerationalState();
+        }
       }
     }
     if (temp_space_ != nullptr) {
@@ -2675,7 +2688,7 @@ void Heap::MarkAllocStack(accounting::ContinuousSpaceBitmap* bitmap1,
   const auto* limit = stack->End();
   for (auto* it = stack->Begin(); it != limit; ++it) {
     const mirror::Object* obj = it->AsMirrorPtr();
-    if (!kUseThreadLocalAllocationStack || obj != nullptr) {
+    if (obj != nullptr) {
       if (bitmap1->HasAddress(obj)) {
         bitmap1->Set(obj);
       } else if (bitmap2->HasAddress(obj)) {
@@ -2859,10 +2872,13 @@ collector::GcType Heap::CollectGarbageInternal(collector::GcType gc_type,
           break;
         case kCollectorTypeCMC:
           collector = mark_compact_;
+          if (use_generational_gc_ && gc_type == collector::kGcTypeSticky) {
+            collector = young_mark_compact_;
+          }
           break;
         case kCollectorTypeCC:
           collector::ConcurrentCopying* active_cc_collector;
-          if (use_generational_cc_) {
+          if (use_generational_gc_) {
             // TODO: Other threads must do the flip checkpoint before they start poking at
             // active_concurrent_copying_collector_. So we should not concurrency here.
             active_cc_collector = (gc_type == collector::kGcTypeSticky) ?
@@ -3375,8 +3391,9 @@ class VerifyReferenceCardVisitor {
           if (!obj->IsObjectArray()) {
             ObjPtr<mirror::Class> klass = is_static ? obj->AsClass() : obj->GetClass();
             CHECK(klass != nullptr);
-            for (ArtField& field : (is_static ? klass->GetSFields() : klass->GetIFields())) {
-              if (field.GetOffset().Int32Value() == offset.Int32Value()) {
+            for (ArtField& field : klass->GetFields()) {
+              if (is_static == field.IsStatic() &&
+                  field.GetOffset().Int32Value() == offset.Int32Value()) {
                 LOG(ERROR) << (is_static ? "Static " : "") << "field in the live stack is "
                            << field.PrettyField();
                 break;
@@ -3800,13 +3817,13 @@ void Heap::GrowForUtilization(collector::GarbageCollector* collector_ran,
     collector::GcType non_sticky_gc_type = NonStickyGcType();
     // Find what the next non sticky collector will be.
     collector::GarbageCollector* non_sticky_collector = FindCollectorByGcType(non_sticky_gc_type);
-    if (use_generational_cc_) {
+    if (use_generational_gc_) {
       if (non_sticky_collector == nullptr) {
         non_sticky_collector = FindCollectorByGcType(collector::kGcTypePartial);
       }
       CHECK(non_sticky_collector != nullptr);
     }
-    double sticky_gc_throughput_adjustment = GetStickyGcThroughputAdjustment(use_generational_cc_);
+    double sticky_gc_throughput_adjustment = GetStickyGcThroughputAdjustment(use_generational_gc_);
 
     // If the throughput of the current sticky GC >= throughput of the non sticky collector, then
     // do another sticky collection next.

@@ -40,7 +40,6 @@
 #include "dex/dex_file_types.h"
 #include "experimental_flags.h"
 #include "gc_root.h"
-#include "instrumentation.h"
 #include "jdwp_provider.h"
 #include "jni/jni_id_manager.h"
 #include "jni_id_type.h"
@@ -62,6 +61,10 @@ class Heap;
 namespace hiddenapi {
 enum class EnforcementPolicy;
 }  // namespace hiddenapi
+
+namespace instrumentation {
+class Instrumentation;
+}  // namespace instrumentation
 
 namespace jit {
 class Jit;
@@ -314,7 +317,7 @@ class Runtime {
   void DetachCurrentThread(bool should_run_callbacks = true) REQUIRES(!Locks::mutator_lock_);
 
   // If we are handling SIQQUIT return the time when we received it.
-  std::optional<uint64_t> SiqQuitNanoTime() const;
+  std::optional<uint64_t> SigQuitNanoTime() const;
 
   void DumpDeoptimizations(std::ostream& os);
   void DumpForSigQuit(std::ostream& os);
@@ -607,11 +610,11 @@ class Runtime {
       bool profile_system_server = false);
 
   const instrumentation::Instrumentation* GetInstrumentation() const {
-    return &instrumentation_;
+    return instrumentation_.get();
   }
 
   instrumentation::Instrumentation* GetInstrumentation() {
-    return &instrumentation_;
+    return instrumentation_.get();
   }
 
   void RegisterAppInfo(const std::string& package_name,
@@ -1115,6 +1118,8 @@ class Runtime {
   // See Flags::ReloadAllFlags as well.
   static void ReloadAllFlags(const std::string& caller);
 
+  inline void CreatePreAllocatedExceptions(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_);
+
   // Parses /apex/apex-info-list.xml to build a string containing apex versions of boot classpath
   // jars, which is encoded into .oat files.
   static std::string GetApexVersions(ArrayRef<const std::string> boot_class_path_locations);
@@ -1133,9 +1138,6 @@ class Runtime {
   }
 
   bool AreMetricsInitialized() const { return metrics_reporter_ != nullptr; }
-
-  // For `artd` only.
-  EXPORT static void AllowPageSizeAccess();
 
  private:
   static void InitPlatformSignalHandlers();
@@ -1334,7 +1336,7 @@ class Runtime {
 
   std::unique_ptr<TraceConfig> trace_config_;
 
-  instrumentation::Instrumentation instrumentation_;
+  std::unique_ptr<instrumentation::Instrumentation> instrumentation_;
 
   jobject main_thread_group_;
   jobject system_thread_group_;

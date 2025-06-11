@@ -123,12 +123,12 @@ static void BindMethod(jvmtiEnv* jvmti_env, JNIEnv* env, jclass klass, jmethodID
   LOG(FATAL) << "Could not find " << mangled_names[0];
 }
 
-static std::string DescriptorToDot(const char* descriptor) {
-  size_t length = strlen(descriptor);
+static std::string DescriptorToDot(std::string_view descriptor) {
+  size_t length = descriptor.length();
   if (length > 1) {
     if (descriptor[0] == 'L' && descriptor[length - 1] == ';') {
       // Descriptors have the leading 'L' and trailing ';' stripped.
-      std::string result(descriptor + 1, length - 2);
+      std::string result(descriptor.substr(1, length - 2));
       std::replace(result.begin(), result.end(), '/', '.');
       return result;
     } else {
@@ -139,7 +139,7 @@ static std::string DescriptorToDot(const char* descriptor) {
     }
   }
   // Do nothing for non-class/array descriptors.
-  return descriptor;
+  return std::string(descriptor);
 }
 
 static jobject GetSystemClassLoader(JNIEnv* env) {
@@ -155,7 +155,7 @@ static jobject GetSystemClassLoader(JNIEnv* env) {
 static jclass FindClassWithClassLoader(JNIEnv* env, const char* class_name, jobject class_loader) {
   // Create a String of the name.
   std::string descriptor = android::base::StringPrintf("L%s;", class_name);
-  std::string dot_name = DescriptorToDot(descriptor.c_str());
+  std::string dot_name = DescriptorToDot(descriptor);
   ScopedLocalRef<jstring> name_str(env, env->NewStringUTF(dot_name.c_str()));
 
   // Call Class.forName with it.

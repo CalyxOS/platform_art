@@ -41,7 +41,7 @@ class ValueSet : public ArenaObject<kArenaAllocGvn> {
       : allocator_(allocator),
         num_buckets_(kMinimumNumberOfBuckets),
         buckets_(allocator->AllocArray<Node*>(num_buckets_, kArenaAllocGvn)),
-        buckets_owned_(allocator, num_buckets_, false, kArenaAllocGvn),
+        buckets_owned_(ArenaBitVector::CreateFixedSize(allocator, num_buckets_, kArenaAllocGvn)),
         num_entries_(0u) {
     DCHECK(IsPowerOfTwo(num_buckets_));
     std::fill_n(buckets_, num_buckets_, nullptr);
@@ -54,7 +54,7 @@ class ValueSet : public ArenaObject<kArenaAllocGvn> {
       : allocator_(allocator),
         num_buckets_(other.IdealBucketCount()),
         buckets_(allocator->AllocArray<Node*>(num_buckets_, kArenaAllocGvn)),
-        buckets_owned_(allocator, num_buckets_, false, kArenaAllocGvn),
+        buckets_owned_(ArenaBitVector::CreateFixedSize(allocator, num_buckets_, kArenaAllocGvn)),
         num_entries_(0u) {
     DCHECK(IsPowerOfTwo(num_buckets_));
     PopulateFromInternal(other);
@@ -125,9 +125,13 @@ class ValueSet : public ArenaObject<kArenaAllocGvn> {
 
   // Removes all instructions in the set affected by the given side effects.
   void Kill(SideEffects side_effects) {
-    DeleteAllImpureWhich([side_effects](Node* node) {
-      return node->GetSideEffects().MayDependOn(side_effects);
-    });
+    // Nothing to do if the side effects don't have any change bit set, as MayDependOn will always
+    // return false.
+    if (side_effects.HasSideEffects()) {
+      DeleteAllImpureWhich([side_effects](Node* node) {
+        return node->GetSideEffects().MayDependOn(side_effects);
+      });
+    }
   }
 
   void Clear() {
@@ -338,7 +342,7 @@ class ValueSet : public ArenaObject<kArenaAllocGvn> {
   // Flags specifying which buckets were copied into the set from its parent.
   // If a flag is not set, the corresponding bucket points to entries in the
   // parent and must be cloned prior to making changes.
-  ArenaBitVector buckets_owned_;
+  BitVectorView<size_t> buckets_owned_;
 
   // The number of entries in the set.
   size_t num_entries_;
@@ -358,9 +362,18 @@ class GlobalValueNumberer : public ValueObject {
         allocator_(graph->GetArenaStack()),
         side_effects_(side_effects),
         sets_(graph->GetBlocks().size(), nullptr, allocator_.Adapter(kArenaAllocGvn)),
-        visited_blocks_(
-            &allocator_, graph->GetBlocks().size(), /* expandable= */ false, kArenaAllocGvn),
-        did_optimization_(false) {}
+        dominated_to_visit_(graph->GetBlocks().size(), allocator_.Adapter(kArenaAllocGvn)),
+        successors_to_visit_(graph->GetBlocks().size(), allocator_.Adapter(kArenaAllocGvn)),
+        free_sets_(ArenaBitVector::CreateFixedSize(
+            &allocator_, graph->GetBlocks().size(), kArenaAllocGvn)),
+        visited_blocks_(ArenaBitVector::CreateFixedSize(
+            &allocator_, graph->GetBlocks().size(), kArenaAllocGvn)),
+        did_optimization_(false) {
+    for (HBasicBlock* block : graph->GetReversePostOrder()) {
+      dominated_to_visit_[block->GetBlockId()] = block->GetDominatedBlocks().size();
+      successors_to_visit_[block->GetBlockId()] = block->GetSuccessors().size();
+    }
+  }
 
   bool Run();
 
@@ -383,26 +396,34 @@ class GlobalValueNumberer : public ValueObject {
     DCHECK(sets_[block->GetBlockId()] != nullptr)
         << "Block B" << block->GetBlockId() << " expected to have a set";
     sets_[block->GetBlockId()] = nullptr;
+    free_sets_.ClearBit(block->GetBlockId());
   }
 
   // Returns false if the GlobalValueNumberer has already visited all blocks
   // which may reference `block`.
-  bool WillBeReferencedAgain(HBasicBlock* block) const;
+  bool WillBeReferencedAgain(uint32_t block_id) const;
 
   // Iterates over visited blocks and finds one which has a ValueSet such that:
   // (a) it will not be referenced in the future, and
   // (b) it can hold a copy of `reference_set` with a reasonable load factor.
-  HBasicBlock* FindVisitedBlockWithRecyclableSet(HBasicBlock* block,
-                                                 const ValueSet& reference_set) const;
+  HBasicBlock* FindVisitedBlockWithRecyclableSet(const ValueSet& reference_set) const;
 
   // ValueSet for blocks. Initially null, but for an individual block they
   // are allocated and populated by the dominator, and updated by all blocks
   // in the path from the dominator to the block.
   ScopedArenaVector<ValueSet*> sets_;
 
+  // Extra bookkeeping to speed up GVN, indexed by block id.
+  // Number of dominated blocks left to visit.
+  ScopedArenaVector<uint32_t> dominated_to_visit_;
+  // Number of successor blocks left to visit.
+  ScopedArenaVector<uint32_t> successors_to_visit_;
+  // True iff the block's ValueSet is free to be reused by another block.
+  BitVectorView<size_t> free_sets_;
+
   // BitVector which serves as a fast-access map from block id to
   // visited/unvisited Boolean.
-  ArenaBitVector visited_blocks_;
+  BitVectorView<size_t> visited_blocks_;
 
   // True if GVN did at least one removal.
   bool did_optimization_;
@@ -445,7 +466,7 @@ void GlobalValueNumberer::VisitBasicBlock(HBasicBlock* block) {
       // Try to find a basic block which will never be referenced again and whose
       // ValueSet can therefore be recycled. We will need to copy `dominator_set`
       // into the recycled set, so we pass `dominator_set` as a reference for size.
-      HBasicBlock* recyclable = FindVisitedBlockWithRecyclableSet(block, *dominator_set);
+      HBasicBlock* recyclable = FindVisitedBlockWithRecyclableSet(*dominator_set);
       if (recyclable == nullptr) {
         // No block with a suitable ValueSet found. Allocate a new one and
         // copy `dominator_set` into it.
@@ -524,54 +545,56 @@ void GlobalValueNumberer::VisitBasicBlock(HBasicBlock* block) {
   }
 
   visited_blocks_.SetBit(block->GetBlockId());
+
+  // Bookkeeping to mark ValueSets to be reused. We mark them as free if the dominator /
+  // predecessor will never be referenced again, and if it hasn't been reused already by this
+  // method (See the `dominator->GetSuccessors().size() == 1` case).
+  if (block->GetDominator() != nullptr) {
+    const uint32_t id = block->GetDominator()->GetBlockId();
+    dominated_to_visit_[id]--;
+    if (!WillBeReferencedAgain(id) && sets_[id] != nullptr) {
+      free_sets_.SetBit(id);
+    }
+  }
+  for (HBasicBlock* pred : predecessors) {
+    const uint32_t id = pred->GetBlockId();
+    successors_to_visit_[id]--;
+    if (!WillBeReferencedAgain(id) && sets_[id] != nullptr) {
+      free_sets_.SetBit(id);
+    }
+  }
 }
 
-bool GlobalValueNumberer::WillBeReferencedAgain(HBasicBlock* block) const {
-  DCHECK(visited_blocks_.IsBitSet(block->GetBlockId()));
-
-  for (const HBasicBlock* dominated_block : block->GetDominatedBlocks()) {
-    if (!visited_blocks_.IsBitSet(dominated_block->GetBlockId())) {
-      return true;
-    }
-  }
-
-  for (const HBasicBlock* successor : block->GetSuccessors()) {
-    if (!visited_blocks_.IsBitSet(successor->GetBlockId())) {
-      return true;
-    }
-  }
-
-  return false;
+bool GlobalValueNumberer::WillBeReferencedAgain(uint32_t block_id) const {
+  // Block itself hasn't been visited, or
+  // a dominated block has yet to be visited, or
+  // a successor is yet to be visited.
+  return !visited_blocks_.IsBitSet(block_id) ||
+         dominated_to_visit_[block_id] != 0 ||
+         successors_to_visit_[block_id] != 0;
 }
 
 HBasicBlock* GlobalValueNumberer::FindVisitedBlockWithRecyclableSet(
-    HBasicBlock* block, const ValueSet& reference_set) const {
+    const ValueSet& reference_set) const {
   HBasicBlock* secondary_match = nullptr;
 
-  for (size_t block_id : visited_blocks_.Indexes()) {
+  // TODO(solanes): If we keep `free_sets_` sorted by size we could do a binary search instead of a
+  // linear one. Note that while a HashMap<size, free_sets> is better for knowing if there's an
+  // exact match, that data structure is worse for the exact_match=false case.
+  for (size_t block_id : free_sets_.Indexes()) {
+    DCHECK(!WillBeReferencedAgain(block_id));
     ValueSet* current_set = sets_[block_id];
-    if (current_set == nullptr) {
-      // Set was already recycled.
-      continue;
-    }
-
-    HBasicBlock* current_block = block->GetGraph()->GetBlocks()[block_id];
+    DCHECK_NE(current_set, nullptr);
 
     // We test if `current_set` has enough buckets to store a copy of
     // `reference_set` with a reasonable load factor. If we find a set whose
     // number of buckets matches perfectly, we return right away. If we find one
     // that is larger, we return it if no perfectly-matching set is found.
-    // Note that we defer testing WillBeReferencedAgain until all other criteria
-    // have been satisfied because it might be expensive.
     if (current_set->CanHoldCopyOf(reference_set, /* exact_match= */ true)) {
-      if (!WillBeReferencedAgain(current_block)) {
-        return current_block;
-      }
+      return graph_->GetBlocks()[block_id];
     } else if (secondary_match == nullptr &&
                current_set->CanHoldCopyOf(reference_set, /* exact_match= */ false)) {
-      if (!WillBeReferencedAgain(current_block)) {
-        secondary_match = current_block;
-      }
+      secondary_match = graph_->GetBlocks()[block_id];
     }
   }
 

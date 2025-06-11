@@ -1191,7 +1191,7 @@ void Hprof::DumpHeapClass(mirror::Class* klass) {
   //       For other overhead (currently only the embedded vtable), we will generate a synthetic
   //       byte array (or field[s] in case the overhead size is of reference size or less).
 
-  const size_t num_static_fields = klass->NumStaticFields();
+  const size_t num_static_fields = klass->ComputeNumStaticFields();
 
   // Total class size:
   //   * class instance fields (including Object instance fields)
@@ -1212,10 +1212,12 @@ void Hprof::DumpHeapClass(mirror::Class* klass) {
   // Tools (ahat/Studio) will count the static fields and account for them in the class size. We
   // must thus subtract them from base_overhead_size or they will be double-counted.
   size_t class_static_fields_size = 0;
-  for (ArtField& class_static_field : klass->GetSFields()) {
-    size_t size = 0;
-    SignatureToBasicTypeAndSize(class_static_field.GetTypeDescriptor(), &size);
-    class_static_fields_size += size;
+  for (ArtField& class_field : klass->GetFields()) {
+    if (class_field.IsStatic()) {
+      size_t size = 0;
+      SignatureToBasicTypeAndSize(class_field.GetTypeDescriptor(), &size);
+      class_static_fields_size += size;
+    }
   }
 
   CHECK_GE(base_overhead_size, class_static_fields_size);
@@ -1284,8 +1286,8 @@ void Hprof::DumpHeapClass(mirror::Class* klass) {
   mirror::Class* class_class = klass->GetClass();
 
   DCHECK(class_class->GetSuperClass()->IsObjectClass());
-  const size_t static_fields_reported = class_class->NumInstanceFields()
-                                        + class_class->GetSuperClass()->NumInstanceFields()
+  const size_t static_fields_reported = class_class->ComputeNumInstanceFields()
+                                        + class_class->GetSuperClass()->ComputeNumInstanceFields()
                                         + java_heap_overhead_field_count
                                         + num_static_fields;
   __ AddU2(dchecked_integral_cast<uint16_t>(static_fields_reported));
@@ -1373,11 +1375,15 @@ void Hprof::DumpHeapClass(mirror::Class* klass) {
     auto class_instance_field_name_fn = [](ArtField& field) REQUIRES_SHARED(Locks::mutator_lock_) {
       return std::string("$class$") + field.GetName();
     };
-    for (ArtField& class_instance_field : class_class->GetIFields()) {
-      static_field_writer(class_instance_field, class_instance_field_name_fn);
+    for (ArtField& class_field : class_class->GetFields()) {
+      if (!class_field.IsStatic()) {
+        static_field_writer(class_field, class_instance_field_name_fn);
+      }
     }
-    for (ArtField& object_instance_field : class_class->GetSuperClass()->GetIFields()) {
-      static_field_writer(object_instance_field, class_instance_field_name_fn);
+    for (ArtField& object_field : class_class->GetSuperClass()->GetFields()) {
+      if (!object_field.IsStatic()) {
+        static_field_writer(object_field, class_instance_field_name_fn);
+      }
     }
   }
 
@@ -1385,13 +1391,15 @@ void Hprof::DumpHeapClass(mirror::Class* klass) {
     auto class_static_field_name_fn = [](ArtField& field) REQUIRES_SHARED(Locks::mutator_lock_) {
       return field.GetName();
     };
-    for (ArtField& class_static_field : klass->GetSFields()) {
-      static_field_writer(class_static_field, class_static_field_name_fn);
+    for (ArtField& class_field : klass->GetFields()) {
+      if (class_field.IsStatic()) {
+        static_field_writer(class_field, class_static_field_name_fn);
+      }
     }
   }
 
   // Instance fields for this class (no superclass fields)
-  int iFieldCount = klass->NumInstanceFields();
+  int iFieldCount = klass->ComputeNumInstanceFields();
   // add_internal_runtime_objects is only for classes that may retain objects live through means
   // other than fields. It is never the case for strings.
   const bool add_internal_runtime_objects = AddRuntimeInternalObjectsField(klass);
@@ -1400,8 +1408,11 @@ void Hprof::DumpHeapClass(mirror::Class* klass) {
   } else {
     __ AddU2((uint16_t)iFieldCount);
   }
-  for (int i = 0; i < iFieldCount; ++i) {
-    ArtField* f = klass->GetInstanceField(i);
+  for (uint32_t i = 0; i < klass->NumFields(); ++i) {
+    ArtField* f = klass->GetField(i);
+    if (f->IsStatic()) {
+      continue;
+    }
     __ AddStringId(LookupStringId(f->GetName()));
     HprofBasicType t = SignatureToBasicTypeAndSize(f->GetTypeDescriptor(), nullptr);
     __ AddU1(t);
@@ -1487,9 +1498,11 @@ void Hprof::DumpHeapInstanceObject(mirror::Object* obj,
 
   // Write the instance data;  fields for this class, followed by super class fields, and so on.
   do {
-    const size_t instance_fields = klass->NumInstanceFields();
-    for (size_t i = 0; i < instance_fields; ++i) {
-      ArtField* f = klass->GetInstanceField(i);
+    for (size_t i = 0; i < klass->NumFields(); ++i) {
+      ArtField* f = klass->GetField(i);
+      if (f->IsStatic()) {
+        continue;
+      }
       size_t size;
       HprofBasicType t = SignatureToBasicTypeAndSize(f->GetTypeDescriptor(), &size);
       switch (t) {

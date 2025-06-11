@@ -19,6 +19,7 @@
 #include "entrypoints/quick/quick_default_init_entrypoints.h"
 #include "entrypoints/quick/quick_entrypoints.h"
 #include "entrypoints/quick/runtime_entrypoints_list.h"
+#include "trace_profile.h"
 
 namespace art HIDDEN {
 
@@ -144,6 +145,10 @@ void InitEntryPoints(JniEntryPoints* jpoints,
   qpoints->SetIndexOf(art_quick_indexof);
   // TODO(riscv64): More intrinsics.
 
+  // Invoke
+  qpoints->SetInvokePolymorphicWithHiddenReceiver(
+      art_quick_invoke_polymorphic_with_hidden_receiver);
+
   // Read barrier.
   UpdateReadBarrierEntrypoints(qpoints, /*is_active=*/ false);
   qpoints->SetReadBarrierSlow(artReadBarrierSlow);
@@ -151,7 +156,7 @@ void InitEntryPoints(JniEntryPoints* jpoints,
 }
 
 void UpdateLowOverheadTraceEntrypoints([[maybe_unused]] QuickEntryPoints* qpoints,
-                                       [[maybe_unused]] bool enable) {
+                                       [[maybe_unused]] LowOverheadTraceType trace_type) {
   // This is a nop on this architecture. Low overhead tracing is only implemented for ARM64.
 }
 

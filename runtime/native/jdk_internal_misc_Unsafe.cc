@@ -22,6 +22,7 @@
 #include <cstring>
 #include <atomic>
 
+#include "jni.h"
 #include "nativehelper/jni_macros.h"
 
 #include "base/quasi_atomic.h"
@@ -607,6 +608,10 @@ static void Unsafe_unpark(JNIEnv* env, jobject, jobject jthread) {
   }
 }
 
+static jobject Unsafe_allocateInstance(JNIEnv* env, jobject, jclass cls) {
+  return env->AllocObject(cls);
+}
+
 static JNINativeMethod gMethods[] = {
     FAST_NATIVE_METHOD(Unsafe, compareAndSwapInt, "(Ljava/lang/Object;JII)Z"),
     FAST_NATIVE_METHOD(Unsafe, compareAndSwapLong, "(Ljava/lang/Object;JJJ)Z"),
@@ -654,6 +659,7 @@ static JNINativeMethod gMethods[] = {
     FAST_NATIVE_METHOD(Unsafe, setMemory, "(JJB)V"),
     FAST_NATIVE_METHOD(Unsafe, copyMemory0, "(Ljava/lang/Object;JLjava/lang/Object;JJ)V"),
     FAST_NATIVE_METHOD(Unsafe, getBoolean, "(Ljava/lang/Object;J)Z"),
+    NATIVE_METHOD(Unsafe, allocateInstance, "(Ljava/lang/Class;)Ljava/lang/Object;"),
 
     FAST_NATIVE_METHOD(Unsafe, getByte, "(Ljava/lang/Object;J)B"),
     FAST_NATIVE_METHOD(Unsafe, getChar, "(Ljava/lang/Object;J)C"),

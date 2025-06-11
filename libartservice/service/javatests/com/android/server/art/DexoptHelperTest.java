@@ -73,7 +73,6 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @SmallTest
@@ -669,7 +668,7 @@ public class DexoptHelperTest {
                            .getPackageDexoptResults()
                            .stream()
                            .map(PackageDexoptResult::getPackageName)
-                           .collect(Collectors.toList()))
+                           .toList())
                 .containsExactly(PKG_NAME_FOO);
     }
 
@@ -693,8 +692,7 @@ public class DexoptHelperTest {
         progressCallbackExecutor.runAll();
 
         List<DexContainerFileDexoptResult> fileResults =
-                Stream.concat(mPrimaryResults.stream(), mSecondaryResults.stream())
-                        .collect(Collectors.toList());
+                Stream.concat(mPrimaryResults.stream(), mSecondaryResults.stream()).toList();
 
         InOrder inOrder = inOrder(progressCallback);
         inOrder.verify(progressCallback)
@@ -843,9 +841,8 @@ public class DexoptHelperTest {
         assertThat(packageResult.getPackageName()).isEqualTo(packageName);
         assertThat(packageResult.getStatus()).isEqualTo(status);
         assertThat(packageResult.getDexContainerFileDexoptResults())
-                .containsExactlyElementsIn(dexContainerFileDexoptResults.stream()
-                                                   .flatMap(r -> r.stream())
-                                                   .collect(Collectors.toList()));
+                .containsExactlyElementsIn(
+                        dexContainerFileDexoptResults.stream().flatMap(r -> r.stream()).toList());
     }
 
     /** An executor that delays execution until `runAll` is called. */

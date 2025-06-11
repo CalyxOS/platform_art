@@ -27,7 +27,7 @@ namespace art {
 
 void VeridexResolver::Run() {
   for (ClassAccessor accessor : dex_file_.GetClasses()) {
-    std::string name(accessor.GetDescriptor());
+    std::string name(accessor.GetDescriptorView());
     auto existing = type_map_.find(name);
     const uint32_t type_idx = accessor.GetClassIdx().index_;
     if (existing != type_map_.end()) {

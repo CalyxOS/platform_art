@@ -14,19 +14,28 @@
  * limitations under the License.
  */
 
-import com.android.libcore.Flags;
-
 public class Main {
     public static void main(String[] args) {
+        // Test a flag in libcore/libcore.aconfig.
         if (!isVTrunkStableFlagEnabled()) {
             throw new AssertionError(
                     "The value of com.android.libcore.v_apis flag is expected to be true.");
+        }
+
+        // Test a flag in art/build/flags/art-flags.aconfig.
+        if (!isArtTestFlagEnabled()) {
+            throw new AssertionError(
+                    "The value of com.android.art.flags.test flag is expected to be true.");
         }
     }
 
     private static boolean isVTrunkStableFlagEnabled() {
         // The Flags class definition is expected to be in core-libart.jar.
-        return Flags.vApis();
+        return com.android.libcore.Flags.vApis();
     }
 
+    private static boolean isArtTestFlagEnabled() {
+        // The Flags class definition is expected to be in core-libart.jar.
+        return com.android.art.flags.Flags.test();
+    }
 }

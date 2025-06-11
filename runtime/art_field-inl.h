@@ -425,19 +425,20 @@ inline ObjPtr<mirror::String> ArtField::ResolveNameString() {
 template <bool kExactOffset>
 static inline ArtField* FindFieldWithOffset(
     const IterationRange<StrideIterator<ArtField>>& fields,
-    uint32_t field_offset) REQUIRES_SHARED(Locks::mutator_lock_) {
+    uint32_t field_offset,
+    bool is_static) REQUIRES_SHARED(Locks::mutator_lock_) {
   for (ArtField& field : fields) {
-    if (kExactOffset) {
-      if (field.GetOffset().Uint32Value() == field_offset) {
+    if (field.IsStatic() == is_static) {
+      if (kExactOffset && field.GetOffset().Uint32Value() == field_offset) {
         return &field;
-      }
-    } else {
-      const uint32_t offset = field.GetOffset().Uint32Value();
-      Primitive::Type type = field.GetTypeAsPrimitiveType();
-      const size_t field_size = Primitive::ComponentSize(type);
-      DCHECK_GT(field_size, 0u);
-      if (offset <= field_offset && field_offset < offset + field_size) {
-        return &field;
+      } else {
+        const uint32_t offset = field.GetOffset().Uint32Value();
+        Primitive::Type type = field.GetTypeAsPrimitiveType();
+        const size_t field_size = Primitive::ComponentSize(type);
+        DCHECK_GT(field_size, 0u);
+        if (offset <= field_offset && field_offset < offset + field_size) {
+          return &field;
+        }
       }
     }
   }
@@ -448,7 +449,8 @@ template <bool kExactOffset, VerifyObjectFlags kVerifyFlags, ReadBarrierOption k
 inline ArtField* ArtField::FindInstanceFieldWithOffset(ObjPtr<mirror::Class> klass,
                                                        uint32_t field_offset) {
   DCHECK(klass != nullptr);
-  ArtField* field = FindFieldWithOffset<kExactOffset>(klass->GetIFields(), field_offset);
+  ArtField* field = FindFieldWithOffset<kExactOffset>(
+      klass->GetFields(), field_offset, /* is_static= */ false);
   if (field != nullptr) {
     return field;
   }
@@ -464,7 +466,7 @@ template <bool kExactOffset>
 inline ArtField* ArtField::FindStaticFieldWithOffset(ObjPtr<mirror::Class> klass,
                                                      uint32_t field_offset) {
   DCHECK(klass != nullptr);
-  return FindFieldWithOffset<kExactOffset>(klass->GetSFields(), field_offset);
+  return FindFieldWithOffset<kExactOffset>(klass->GetFields(), field_offset, /* is_static= */ true);
 }
 
 inline ObjPtr<mirror::ClassLoader> ArtField::GetClassLoader() {

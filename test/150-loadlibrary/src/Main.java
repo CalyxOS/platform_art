@@ -26,30 +26,17 @@ public class Main {
       throw new IllegalStateException("Expected non-null classloader for Object");
     }
 
-    // Try to load libarttest(d) with the BootClassLoader. First construct the filename.
+    // Try to load libarttest(d) with the BootClassLoader. First construct the
+    // filename. It's in NATIVELOADER_DEFAULT_NAMESPACE_LIBS, so it's accessible
+    // simply through the file name.
     String libName = System.mapLibraryName(args[0]);
-    Method libPathsMethod = Runtime.class.getDeclaredMethod("getLibPaths");
-    libPathsMethod.setAccessible(true);
-    String[] libPaths = (String[])libPathsMethod.invoke(Runtime.getRuntime());
-    String fileName = null;
-    for (String p : libPaths) {
-      String candidate = p + libName;
-      if (new File(candidate).exists()) {
-          fileName = candidate;
-          break;
-      }
-    }
-    if (fileName == null) {
-      throw new IllegalStateException("Didn't find " + libName + " in " +
-          Arrays.toString(libPaths));
-    }
 
     // Then call an internal function that accepts the classloader. Do not use load(), as it
     // is deprecated and only there for backwards compatibility, and prints a warning to the
     // log that we'd have to strip (it contains the pid).
     Method m = Runtime.class.getDeclaredMethod("nativeLoad", String.class, ClassLoader.class);
     m.setAccessible(true);
-    Object result = m.invoke(Runtime.getRuntime(), fileName, bootClassLoader);
+    Object result = m.invoke(Runtime.getRuntime(), libName, bootClassLoader);
     if (result != null) {
       throw new IllegalStateException(result.toString());
     }

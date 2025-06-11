@@ -16,6 +16,8 @@
 
 #include "intrinsics_arm64.h"
 
+#include "aarch64/assembler-aarch64.h"
+#include "aarch64/operands-aarch64.h"
 #include "arch/arm64/callee_save_frame_arm64.h"
 #include "arch/arm64/instruction_set_features_arm64.h"
 #include "art_method.h"
@@ -23,6 +25,7 @@
 #include "code_generator_arm64.h"
 #include "common_arm64.h"
 #include "data_type-inl.h"
+#include "dex/modifiers.h"
 #include "entrypoints/quick/quick_entrypoints.h"
 #include "heap_poisoning.h"
 #include "intrinsic_objects.h"
@@ -30,7 +33,10 @@
 #include "intrinsics_utils.h"
 #include "lock_word.h"
 #include "mirror/array-inl.h"
+#include "mirror/class.h"
 #include "mirror/method_handle_impl.h"
+#include "mirror/method_type.h"
+#include "mirror/object.h"
 #include "mirror/object_array-inl.h"
 #include "mirror/reference.h"
 #include "mirror/string-inl.h"
@@ -181,8 +187,7 @@ class InvokePolymorphicSlowPathARM64 : public SlowPathCodeARM64 {
     // Passing `MethodHandle` object as hidden argument.
     __ Mov(w0, method_handle_.W());
     codegen->InvokeRuntime(QuickEntrypointEnum::kQuickInvokePolymorphicWithHiddenReceiver,
-                           instruction_,
-                           instruction_->GetDexPc());
+                           instruction_);
 
     RestoreLiveRegisters(codegen, instruction_->GetLocations());
     __ B(GetExitLabel());
@@ -198,12 +203,18 @@ class InvokePolymorphicSlowPathARM64 : public SlowPathCodeARM64 {
 #undef __
 
 bool IntrinsicLocationsBuilderARM64::TryDispatch(HInvoke* invoke) {
+#ifdef ART_USE_RESTRICTED_MODE
+  // TODO(Simulator): support intrinsics.
+  USE(invoke);
+  return false;
+#else
   Dispatch(invoke);
   LocationSummary* res = invoke->GetLocations();
   if (res == nullptr) {
     return false;
   }
   return res->Intrinsified();
+#endif  // ART_USE_RESTRICTED_MODE
 }
 
 #define __ masm->
@@ -1018,8 +1029,8 @@ void IntrinsicLocationsBuilderARM64::VisitUnsafePut(HInvoke* invoke) {
 void IntrinsicLocationsBuilderARM64::VisitUnsafePutAbsolute(HInvoke* invoke) {
   VisitJdkUnsafePutAbsolute(invoke);
 }
-void IntrinsicLocationsBuilderARM64::VisitUnsafePutOrdered(HInvoke* invoke) {
-  VisitJdkUnsafePutOrdered(invoke);
+void IntrinsicLocationsBuilderARM64::VisitUnsafePutOrderedInt(HInvoke* invoke) {
+  VisitJdkUnsafePutOrderedInt(invoke);
 }
 void IntrinsicLocationsBuilderARM64::VisitUnsafePutVolatile(HInvoke* invoke) {
   VisitJdkUnsafePutVolatile(invoke);
@@ -1027,8 +1038,8 @@ void IntrinsicLocationsBuilderARM64::VisitUnsafePutVolatile(HInvoke* invoke) {
 void IntrinsicLocationsBuilderARM64::VisitUnsafePutObject(HInvoke* invoke) {
   VisitJdkUnsafePutReference(invoke);
 }
-void IntrinsicLocationsBuilderARM64::VisitUnsafePutObjectOrdered(HInvoke* invoke) {
-  VisitJdkUnsafePutObjectOrdered(invoke);
+void IntrinsicLocationsBuilderARM64::VisitUnsafePutOrderedObject(HInvoke* invoke) {
+  VisitJdkUnsafePutOrderedObject(invoke);
 }
 void IntrinsicLocationsBuilderARM64::VisitUnsafePutObjectVolatile(HInvoke* invoke) {
   VisitJdkUnsafePutReferenceVolatile(invoke);
@@ -1052,7 +1063,7 @@ void IntrinsicLocationsBuilderARM64::VisitJdkUnsafePut(HInvoke* invoke) {
 void IntrinsicLocationsBuilderARM64::VisitJdkUnsafePutAbsolute(HInvoke* invoke) {
   CreateUnsafePutAbsoluteLocations(allocator_, invoke);
 }
-void IntrinsicLocationsBuilderARM64::VisitJdkUnsafePutOrdered(HInvoke* invoke) {
+void IntrinsicLocationsBuilderARM64::VisitJdkUnsafePutOrderedInt(HInvoke* invoke) {
   CreateUnsafePutLocations(allocator_, invoke);
 }
 void IntrinsicLocationsBuilderARM64::VisitJdkUnsafePutVolatile(HInvoke* invoke) {
@@ -1064,7 +1075,7 @@ void IntrinsicLocationsBuilderARM64::VisitJdkUnsafePutRelease(HInvoke* invoke) {
 void IntrinsicLocationsBuilderARM64::VisitJdkUnsafePutReference(HInvoke* invoke) {
   CreateUnsafePutLocations(allocator_, invoke);
 }
-void IntrinsicLocationsBuilderARM64::VisitJdkUnsafePutObjectOrdered(HInvoke* invoke) {
+void IntrinsicLocationsBuilderARM64::VisitJdkUnsafePutOrderedObject(HInvoke* invoke) {
   CreateUnsafePutLocations(allocator_, invoke);
 }
 void IntrinsicLocationsBuilderARM64::VisitJdkUnsafePutReferenceVolatile(HInvoke* invoke) {
@@ -1164,8 +1175,8 @@ void IntrinsicCodeGeneratorARM64::VisitUnsafePut(HInvoke* invoke) {
 void IntrinsicCodeGeneratorARM64::VisitUnsafePutAbsolute(HInvoke* invoke) {
   VisitJdkUnsafePutAbsolute(invoke);
 }
-void IntrinsicCodeGeneratorARM64::VisitUnsafePutOrdered(HInvoke* invoke) {
-  VisitJdkUnsafePutOrdered(invoke);
+void IntrinsicCodeGeneratorARM64::VisitUnsafePutOrderedInt(HInvoke* invoke) {
+  VisitJdkUnsafePutOrderedInt(invoke);
 }
 void IntrinsicCodeGeneratorARM64::VisitUnsafePutVolatile(HInvoke* invoke) {
   VisitJdkUnsafePutVolatile(invoke);
@@ -1173,8 +1184,8 @@ void IntrinsicCodeGeneratorARM64::VisitUnsafePutVolatile(HInvoke* invoke) {
 void IntrinsicCodeGeneratorARM64::VisitUnsafePutObject(HInvoke* invoke) {
   VisitJdkUnsafePutReference(invoke);
 }
-void IntrinsicCodeGeneratorARM64::VisitUnsafePutObjectOrdered(HInvoke* invoke) {
-  VisitJdkUnsafePutObjectOrdered(invoke);
+void IntrinsicCodeGeneratorARM64::VisitUnsafePutOrderedObject(HInvoke* invoke) {
+  VisitJdkUnsafePutOrderedObject(invoke);
 }
 void IntrinsicCodeGeneratorARM64::VisitUnsafePutObjectVolatile(HInvoke* invoke) {
   VisitJdkUnsafePutReferenceVolatile(invoke);
@@ -1206,7 +1217,7 @@ void IntrinsicCodeGeneratorARM64::VisitJdkUnsafePutAbsolute(HInvoke* invoke) {
                        /*is_ordered=*/ false,
                        codegen_);
 }
-void IntrinsicCodeGeneratorARM64::VisitJdkUnsafePutOrdered(HInvoke* invoke) {
+void IntrinsicCodeGeneratorARM64::VisitJdkUnsafePutOrderedInt(HInvoke* invoke) {
   GenUnsafePut(invoke,
                DataType::Type::kInt32,
                /*is_volatile=*/ false,
@@ -1234,7 +1245,7 @@ void IntrinsicCodeGeneratorARM64::VisitJdkUnsafePutReference(HInvoke* invoke) {
                /*is_ordered=*/ false,
                codegen_);
 }
-void IntrinsicCodeGeneratorARM64::VisitJdkUnsafePutObjectOrdered(HInvoke* invoke) {
+void IntrinsicCodeGeneratorARM64::VisitJdkUnsafePutOrderedObject(HInvoke* invoke) {
   GenUnsafePut(invoke,
                DataType::Type::kReference,
                /*is_volatile=*/ false,
@@ -2473,7 +2484,7 @@ static void GenerateVisitStringIndexOf(HInvoke* invoke,
     __ Mov(tmp_reg, 0);
   }
 
-  codegen->InvokeRuntime(kQuickIndexOf, invoke, invoke->GetDexPc(), slow_path);
+  codegen->InvokeRuntime(kQuickIndexOf, invoke, slow_path);
   CheckEntrypointTypes<kQuickIndexOf, int32_t, void*, uint32_t, uint32_t>();
 
   if (slow_path != nullptr) {
@@ -2537,7 +2548,7 @@ void IntrinsicCodeGeneratorARM64::VisitStringNewStringFromBytes(HInvoke* invoke)
   codegen_->AddSlowPath(slow_path);
   __ B(eq, slow_path->GetEntryLabel());
 
-  codegen_->InvokeRuntime(kQuickAllocStringFromBytes, invoke, invoke->GetDexPc(), slow_path);
+  codegen_->InvokeRuntime(kQuickAllocStringFromBytes, invoke, slow_path);
   CheckEntrypointTypes<kQuickAllocStringFromBytes, void*, void*, int32_t, int32_t, int32_t>();
   __ Bind(slow_path->GetExitLabel());
 }
@@ -2559,7 +2570,7 @@ void IntrinsicCodeGeneratorARM64::VisitStringNewStringFromChars(HInvoke* invoke)
   //   java.lang.StringFactory.newStringFromChars(int offset, int charCount, char[] data)
   //
   // all include a null check on `data` before calling that method.
-  codegen_->InvokeRuntime(kQuickAllocStringFromChars, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickAllocStringFromChars, invoke);
   CheckEntrypointTypes<kQuickAllocStringFromChars, void*, int32_t, int32_t, void*>();
 }
 
@@ -2582,7 +2593,7 @@ void IntrinsicCodeGeneratorARM64::VisitStringNewStringFromString(HInvoke* invoke
   codegen_->AddSlowPath(slow_path);
   __ B(eq, slow_path->GetEntryLabel());
 
-  codegen_->InvokeRuntime(kQuickAllocStringFromString, invoke, invoke->GetDexPc(), slow_path);
+  codegen_->InvokeRuntime(kQuickAllocStringFromString, invoke, slow_path);
   CheckEntrypointTypes<kQuickAllocStringFromString, void*, void*>();
   __ Bind(slow_path->GetExitLabel());
 }
@@ -2634,7 +2645,7 @@ static void CreateFPFPFPToFPLocations(ArenaAllocator* allocator, HInvoke* invoke
 static void GenFPToFPCall(HInvoke* invoke,
                           CodeGeneratorARM64* codegen,
                           QuickEntrypointEnum entry) {
-  codegen->InvokeRuntime(entry, invoke, invoke->GetDexPc());
+  codegen->InvokeRuntime(entry, invoke);
 }
 
 void IntrinsicLocationsBuilderARM64::VisitMathCos(HInvoke* invoke) {
@@ -2953,9 +2964,8 @@ void IntrinsicLocationsBuilderARM64::VisitSystemArrayCopyChar(HInvoke* invoke) {
     }
   }
 
-  ArenaAllocator* allocator = invoke->GetBlock()->GetGraph()->GetAllocator();
   LocationSummary* locations =
-      new (allocator) LocationSummary(invoke, LocationSummary::kCallOnSlowPath, kIntrinsified);
+      new (allocator_) LocationSummary(invoke, LocationSummary::kCallOnSlowPath, kIntrinsified);
   // arraycopy(char[] src, int src_pos, char[] dst, int dst_pos, int length).
   locations->SetInAt(0, Location::RequiresRegister());
   locations->SetInAt(1, LocationForSystemArrayCopyInput(invoke->InputAt(1)));
@@ -3666,7 +3676,7 @@ void IntrinsicCodeGeneratorARM64::HandleValueOf(HInvoke* invoke,
   auto allocate_instance = [&]() {
     DCHECK(out.X().Is(InvokeRuntimeCallingConvention().GetRegisterAt(0)));
     codegen_->LoadIntrinsicDeclaringClass(out, invoke);
-    codegen_->InvokeRuntime(kQuickAllocObjectInitialized, invoke, invoke->GetDexPc());
+    codegen_->InvokeRuntime(kQuickAllocObjectInitialized, invoke);
     CheckEntrypointTypes<kQuickAllocObjectWithChecks, void*, mirror::Class*>();
   };
   if (invoke->InputAt(0)->IsIntConstant()) {
@@ -4860,7 +4870,7 @@ static void GenerateVarHandleTarget(HInvoke* invoke,
   if (expected_coordinates_count <= 1u) {
     if (VarHandleOptimizations(invoke).GetUseKnownImageVarHandle()) {
       ScopedObjectAccess soa(Thread::Current());
-      ArtField* target_field = GetBootImageVarHandleField(invoke);
+      ArtField* target_field = GetImageVarHandleField(invoke);
       if (expected_coordinates_count == 0u) {
         ObjPtr<mirror::Class> declaring_class = target_field->GetDeclaringClass();
         if (Runtime::Current()->GetHeap()->ObjectIsInBootImageSpace(declaring_class)) {
@@ -4917,7 +4927,7 @@ static LocationSummary* CreateVarHandleCommonLocations(HInvoke* invoke,
   size_t expected_coordinates_count = GetExpectedVarHandleCoordinatesCount(invoke);
   DataType::Type return_type = invoke->GetType();
 
-  ArenaAllocator* allocator = invoke->GetBlock()->GetGraph()->GetAllocator();
+  ArenaAllocator* allocator = codegen->GetGraph()->GetAllocator();
   LocationSummary* locations =
       new (allocator) LocationSummary(invoke, LocationSummary::kCallOnSlowPath, kIntrinsified);
   locations->SetInAt(0, Location::RequiresRegister());
@@ -5968,57 +5978,175 @@ void VarHandleSlowPathARM64::EmitByteArrayViewCode(CodeGenerator* codegen_in) {
 }
 
 void IntrinsicLocationsBuilderARM64::VisitMethodHandleInvokeExact(HInvoke* invoke) {
-  ArenaAllocator* allocator = invoke->GetBlock()->GetGraph()->GetAllocator();
-  LocationSummary* locations = new (allocator)
+  LocationSummary* locations = new (allocator_)
       LocationSummary(invoke, LocationSummary::kCallOnMainAndSlowPath, kIntrinsified);
 
   InvokeDexCallingConventionVisitorARM64 calling_convention;
   locations->SetOut(calling_convention.GetReturnLocation(invoke->GetType()));
 
-  locations->SetInAt(0, Location::RequiresRegister());
-
   // Accomodating LocationSummary for underlying invoke-* call.
   uint32_t number_of_args = invoke->GetNumberOfArguments();
+
   for (uint32_t i = 1; i < number_of_args; ++i) {
     locations->SetInAt(i, calling_convention.GetNextLocation(invoke->InputAt(i)->GetType()));
   }
 
+  // Passing MethodHandle object as the last parameter: accessors implementation rely on it.
+  DCHECK_EQ(invoke->InputAt(0)->GetType(), DataType::Type::kReference);
+  Location receiver_mh_loc = calling_convention.GetNextLocation(DataType::Type::kReference);
+  locations->SetInAt(0, receiver_mh_loc);
+
   // The last input is MethodType object corresponding to the call-site.
   locations->SetInAt(number_of_args, Location::RequiresRegister());
 
-  locations->AddTemp(Location::RequiresRegister());
   locations->AddTemp(calling_convention.GetMethodLocation());
+  locations->AddRegisterTemps(4);
+
+  if (!receiver_mh_loc.IsRegister()) {
+    locations->AddTemp(Location::RequiresRegister());
+  }
 }
 
 void IntrinsicCodeGeneratorARM64::VisitMethodHandleInvokeExact(HInvoke* invoke) {
   LocationSummary* locations = invoke->GetLocations();
+  MacroAssembler* masm = codegen_->GetVIXLAssembler();
 
-  Register method_handle = InputRegisterAt(invoke, 0);
+  Location receiver_mh_loc = locations->InAt(0);
+  Register method_handle = receiver_mh_loc.IsRegister()
+      ? InputRegisterAt(invoke, 0)
+      : WRegisterFrom(locations->GetTemp(5));
+
+  if (!receiver_mh_loc.IsRegister()) {
+    DCHECK(receiver_mh_loc.IsStackSlot());
+    __ Ldr(method_handle.W(), MemOperand(sp, receiver_mh_loc.GetStackIndex()));
+  }
 
   SlowPathCodeARM64* slow_path =
       new (codegen_->GetScopedAllocator()) InvokePolymorphicSlowPathARM64(invoke, method_handle);
   codegen_->AddSlowPath(slow_path);
-  MacroAssembler* masm = codegen_->GetVIXLAssembler();
 
   Register call_site_type = InputRegisterAt(invoke, invoke->GetNumberOfArguments());
 
   // Call site should match with MethodHandle's type.
-  Register temp = WRegisterFrom(locations->GetTemp(0));
+  Register temp = WRegisterFrom(locations->GetTemp(1));
   __ Ldr(temp, HeapOperand(method_handle.W(), mirror::MethodHandle::MethodTypeOffset()));
   codegen_->GetAssembler()->MaybeUnpoisonHeapReference(temp);
   __ Cmp(call_site_type, temp);
   __ B(ne, slow_path->GetEntryLabel());
 
-  __ Ldr(temp, HeapOperand(method_handle.W(), mirror::MethodHandle::HandleKindOffset()));
-  __ Cmp(temp, Operand(mirror::MethodHandle::Kind::kInvokeStatic));
-  __ B(ne, slow_path->GetEntryLabel());
-
-  Register method = XRegisterFrom(locations->GetTemp(1));
+  Register method = XRegisterFrom(locations->GetTemp(0));
   __ Ldr(method, HeapOperand(method_handle.W(), mirror::MethodHandle::ArtFieldOrMethodOffset()));
+
+  vixl::aarch64::Label execute_target_method;
+  vixl::aarch64::Label method_dispatch;
+
+  Register method_handle_kind = WRegisterFrom(locations->GetTemp(2));
+  __ Ldr(method_handle_kind,
+         HeapOperand(method_handle.W(), mirror::MethodHandle::HandleKindOffset()));
+
+  __ Cmp(method_handle_kind, Operand(mirror::MethodHandle::Kind::kFirstAccessorKind));
+  __ B(lt, &method_dispatch);
+  __ Ldr(method, HeapOperand(method_handle.W(), mirror::MethodHandleImpl::TargetOffset()));
+  __ B(&execute_target_method);
+
+  __ Bind(&method_dispatch);
+  __ Cmp(method_handle_kind, Operand(mirror::MethodHandle::Kind::kInvokeStatic));
+  __ B(eq, &execute_target_method);
+
+  if (invoke->AsInvokePolymorphic()->CanTargetInstanceMethod()) {
+    Register receiver = InputRegisterAt(invoke, 1);
+
+    // Receiver shouldn't be null for all the following cases.
+    __ Cbz(receiver, slow_path->GetEntryLabel());
+
+    __ Cmp(method_handle_kind, Operand(mirror::MethodHandle::Kind::kInvokeDirect));
+    // No dispatch is needed for invoke-direct.
+    __ B(eq, &execute_target_method);
+
+    vixl::aarch64::Label non_virtual_dispatch;
+    __ Cmp(method_handle_kind, Operand(mirror::MethodHandle::Kind::kInvokeVirtual));
+    __ B(ne, &non_virtual_dispatch);
+
+    // Skip virtual dispatch if `method` is private.
+    __ Ldr(temp, MemOperand(method, ArtMethod::AccessFlagsOffset().Int32Value()));
+    __ And(temp, temp, Operand(kAccPrivate));
+    __ Cbnz(temp, &execute_target_method);
+
+    Register receiver_class = WRegisterFrom(locations->GetTemp(3));
+    // If method is defined in the receiver's class, execute it as it is.
+    __ Ldr(temp, MemOperand(method, ArtMethod::DeclaringClassOffset().Int32Value()));
+    __ Ldr(receiver_class, HeapOperand(receiver.W(), mirror::Object::ClassOffset().Int32Value()));
+    codegen_->GetAssembler()->MaybeUnpoisonHeapReference(receiver_class.W());
+    // `receiver_class` is read w/o read barriers: false negatives go through virtual dispatch.
+    __ Cmp(temp, receiver_class);
+    __ B(eq, &execute_target_method);
+
+    // MethodIndex is uint16_t.
+    __ Ldrh(temp, MemOperand(method, ArtMethod::MethodIndexOffset().Int32Value()));
+
+    // Re-using receiver class register to store vtable.
+    constexpr uint32_t vtable_offset =
+        mirror::Class::EmbeddedVTableOffset(art::PointerSize::k64).Int32Value();
+    __ Add(receiver_class.X(), receiver_class.X(), vtable_offset);
+    __ Ldr(method, MemOperand(receiver_class.X(), temp, Extend::UXTW, 3u));
+    __ B(&execute_target_method);
+
+    __ Bind(&non_virtual_dispatch);
+    __ Cmp(method_handle_kind, Operand(mirror::MethodHandle::Kind::kInvokeInterface));
+    __ B(ne, slow_path->GetEntryLabel());
+
+    // Skip virtual dispatch if `method` is private.
+    // Re-using method_handle_kind to store access flags.
+    Register access_flags = WRegisterFrom(locations->GetTemp(4));
+    __ Ldr(access_flags, MemOperand(method, ArtMethod::AccessFlagsOffset().Int32Value()));
+    __ And(temp, access_flags, Operand(kAccPrivate));
+    __ Cbnz(temp, &execute_target_method);
+
+    // The register ip1 is required to be used for the hidden argument in
+    // art_quick_imt_conflict_trampoline, so prevent VIXL from using it.
+    UseScratchRegisterScope scratch_scope(masm);
+    scratch_scope.Exclude(ip1);
+
+    // Set the hidden argument.
+    __ Mov(ip1, method);
+
+    vixl::aarch64::Label get_imt_index_from_method_index;
+    vixl::aarch64::Label do_imt_dispatch;
+
+    // Get IMT index.
+    // Not doing default conflict check as IMT index is set for all method which have
+    // kAccAbstract bit.
+    __ And(temp, access_flags, Operand(kAccAbstract));
+    __ Cbz(temp, &get_imt_index_from_method_index);
+
+    // imt_index is uint16_t
+    __ Ldrh(temp, MemOperand(method, ArtMethod::ImtIndexOffset().Int32Value()));
+    __ B(&do_imt_dispatch);
+
+    // Default method, do method->GetMethodIndex() & (ImTable::kSizeTruncToPowerOfTwo - 1);
+    __ Bind(&get_imt_index_from_method_index);
+    __ Ldr(temp, MemOperand(method, ArtMethod::MethodIndexOffset().Int32Value()));
+    __ And(temp, temp, Operand(ImTable::kSizeTruncToPowerOfTwo - 1));
+
+    __ Bind(&do_imt_dispatch);
+    // Re-using `method` to store receiver class and ImTableEntry.
+    __ Ldr(method.W(), HeapOperand(receiver.W(), mirror::Object::ClassOffset()));
+    codegen_->GetAssembler()->MaybeUnpoisonHeapReference(method.W());
+
+    __ Ldr(method, MemOperand(method, mirror::Class::ImtPtrOffset(PointerSize::k64).Int32Value()));
+    __ Ldr(method, MemOperand(method, temp, Extend::UXTW, 3u));
+
+    __ B(&execute_target_method);
+  } else {
+    // Not invoke-static and the first argument is not a reference type.
+    __ B(slow_path->GetEntryLabel());
+  }
+
+  __ Bind(&execute_target_method);
   Offset entry_point = ArtMethod::EntryPointFromQuickCompiledCodeOffset(kArm64PointerSize);
   __ Ldr(lr, MemOperand(method, entry_point.SizeValue()));
   __ Blr(lr);
-  codegen_->RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+  codegen_->RecordPcInfo(invoke, slow_path);
   __ Bind(slow_path->GetExitLabel());
 }
 

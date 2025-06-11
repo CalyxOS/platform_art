@@ -1231,7 +1231,7 @@ public class Main {
   /// CHECK-DAG:      <<Phi:i\d+>>      Phi [<<Const13>>,<<Const54>>]
   /// CHECK-DAG:                        Return [<<Phi>>]
 
-  /// CHECK-START: int Main.$noinline$booleanFieldNotEqualOne() select_generator (after)
+  /// CHECK-START: int Main.$noinline$booleanFieldNotEqualOne() control_flow_simplifier (after)
   /// CHECK-DAG:      <<Field:z\d+>>    StaticFieldGet
   /// CHECK-DAG:      <<Const13:i\d+>>  IntConstant 13
   /// CHECK-DAG:      <<Const54:i\d+>>  IntConstant 54
@@ -1252,7 +1252,7 @@ public class Main {
   /// CHECK-DAG:      <<Phi:i\d+>>      Phi [<<Const13>>,<<Const54>>]
   /// CHECK-DAG:                        Return [<<Phi>>]
 
-  /// CHECK-START: int Main.$noinline$booleanFieldEqualZero() select_generator (after)
+  /// CHECK-START: int Main.$noinline$booleanFieldEqualZero() control_flow_simplifier (after)
   /// CHECK-DAG:      <<Field:z\d+>>    StaticFieldGet
   /// CHECK-DAG:      <<Const13:i\d+>>  IntConstant 13
   /// CHECK-DAG:      <<Const54:i\d+>>  IntConstant 54
@@ -1278,7 +1278,7 @@ public class Main {
   /// CHECK-DAG:      <<Phi2:i\d+>>     Phi [<<Const13>>,<<Const54>>]
   /// CHECK-DAG:                        Return [<<Phi2>>]
 
-  /// CHECK-START: int Main.$noinline$intConditionNotEqualOne(int) select_generator (after)
+  /// CHECK-START: int Main.$noinline$intConditionNotEqualOne(int) control_flow_simplifier (after)
   /// CHECK-DAG:      <<Arg:i\d+>>      ParameterValue
   /// CHECK-DAG:      <<Const13:i\d+>>  IntConstant 13
   /// CHECK-DAG:      <<Const42:i\d+>>  IntConstant 42
@@ -1308,7 +1308,7 @@ public class Main {
   /// CHECK-DAG:      <<Phi2:i\d+>>     Phi [<<Const13>>,<<Const54>>]
   /// CHECK-DAG:                        Return [<<Phi2>>]
 
-  /// CHECK-START: int Main.$noinline$intConditionEqualZero(int) select_generator (after)
+  /// CHECK-START: int Main.$noinline$intConditionEqualZero(int) control_flow_simplifier (after)
   /// CHECK-DAG:      <<Arg:i\d+>>      ParameterValue
   /// CHECK-DAG:      <<Const13:i\d+>>  IntConstant 13
   /// CHECK-DAG:      <<Const42:i\d+>>  IntConstant 42

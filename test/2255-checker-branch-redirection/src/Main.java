@@ -32,6 +32,15 @@ public class Main {
         assertEquals(30, $noinline$testEliminateIfParameterOppositeCondition(20, 10, 20 < 10));
         assertEquals(40, $noinline$testEliminateIfParameterOppositeCondition_2(20, 40, 20 < 40));
         assertEquals(30, $noinline$testEliminateIfParameterOppositeCondition_2(20, 10, 20 < 10));
+
+        assertEquals(2, $noinline$testEliminateIfFp(20.0, 40.0));
+        assertEquals(3, $noinline$testEliminateIfFp(20.0, 10.0));
+        assertEquals(3, $noinline$testEliminateIfFp(20.0, Double.NaN));
+        assertEquals(3, $noinline$testEliminateIfFp(Double.NaN, 10.0));
+        assertEquals(3, $noinline$testDoNotEliminateIfOppositeCondFpWrongBias(20.0, 40.0));
+        assertEquals(2, $noinline$testDoNotEliminateIfOppositeCondFpWrongBias(20.0, 10.0));
+        assertEquals(3, $noinline$testDoNotEliminateIfOppositeCondFpWrongBias(20.0, Double.NaN));
+        assertEquals(3, $noinline$testDoNotEliminateIfOppositeCondFpWrongBias(Double.NaN, 10.0));
     }
 
     private static int $noinline$emptyMethod(int a) {
@@ -270,6 +279,50 @@ public class Main {
             result += $noinline$emptyMethod(a * 2);
         } else {
             result += $noinline$emptyMethod(b * 3);
+        }
+        return result;
+    }
+
+    /// CHECK-START: int Main.$noinline$testEliminateIfFp(double, double) dead_code_elimination$after_gvn (before)
+    /// CHECK:     If
+    /// CHECK:     If
+
+    /// CHECK-START: int Main.$noinline$testEliminateIfFp(double, double) dead_code_elimination$after_gvn (after)
+    /// CHECK:     If
+    /// CHECK-NOT: If
+    private static int $noinline$testEliminateIfFp(double a, double b) {
+        int result = 0;
+        if (a < b) {
+            $noinline$emptyMethod(0);
+        } else {
+            $noinline$emptyMethod(1);
+        }
+        if (a < b) {
+            result += $noinline$emptyMethod(2);
+        } else {
+            result += $noinline$emptyMethod(3);
+        }
+        return result;
+    }
+
+    /// CHECK-START: int Main.$noinline$testDoNotEliminateIfOppositeCondFpWrongBias(double, double) dead_code_elimination$initial (before)
+    /// CHECK:     If
+    /// CHECK:     If
+
+    /// CHECK-START: int Main.$noinline$testDoNotEliminateIfOppositeCondFpWrongBias(double, double) dead_code_elimination$initial (after)
+    /// CHECK:     If
+    /// CHECK:     If
+    private static int $noinline$testDoNotEliminateIfOppositeCondFpWrongBias(double a, double b) {
+        int result = 0;
+        if (a < b) {
+            $noinline$emptyMethod(0);
+        } else {
+            $noinline$emptyMethod(1);
+        }
+        if (a >= b) {
+            result += $noinline$emptyMethod(2);
+        } else {
+            result += $noinline$emptyMethod(3);
         }
         return result;
     }

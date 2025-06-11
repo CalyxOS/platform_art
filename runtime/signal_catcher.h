@@ -42,7 +42,7 @@ class SignalCatcher {
   void HandleSigQuit() REQUIRES(!Locks::mutator_lock_, !Locks::thread_list_lock_,
                                 !Locks::thread_suspend_count_lock_);
 
-  std::optional<uint64_t> SiqQuitNanoTime() const { return sigquit_nanotime_; }
+  std::optional<uint64_t> SigQuitNanoTime() const { return sigquit_nanotime_; }
 
  private:
   // NO_THREAD_SAFETY_ANALYSIS for static function calling into member function with excludes lock.

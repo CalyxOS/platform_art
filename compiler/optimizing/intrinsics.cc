@@ -172,19 +172,11 @@ IntrinsicVisitor::ValueOfInfo IntrinsicVisitor::ComputeValueOfInfo(
 }
 
 MemberOffset IntrinsicVisitor::GetReferenceDisableIntrinsicOffset() {
-  ScopedObjectAccess soa(Thread::Current());
-  // The "disableIntrinsic" is the first static field.
-  ArtField* field = GetClassRoot<mirror::Reference>()->GetStaticField(0);
-  DCHECK_STREQ(field->GetName(), "disableIntrinsic");
-  return field->GetOffset();
+  return WellKnownClasses::java_lang_ref_Reference_disableIntrinsic->GetOffset();
 }
 
 MemberOffset IntrinsicVisitor::GetReferenceSlowPathEnabledOffset() {
-  ScopedObjectAccess soa(Thread::Current());
-  // The "slowPathEnabled" is the second static field.
-  ArtField* field = GetClassRoot<mirror::Reference>()->GetStaticField(1);
-  DCHECK_STREQ(field->GetName(), "slowPathEnabled");
-  return field->GetOffset();
+  return WellKnownClasses::java_lang_ref_Reference_slowPathEnabled->GetOffset();
 }
 
 void IntrinsicVisitor::CreateReferenceGetReferentLocations(HInvoke* invoke,
@@ -206,7 +198,7 @@ void IntrinsicVisitor::CreateReferenceRefersToLocations(HInvoke* invoke, CodeGen
     return;
   }
 
-  ArenaAllocator* allocator = invoke->GetBlock()->GetGraph()->GetAllocator();
+  ArenaAllocator* allocator = codegen->GetGraph()->GetAllocator();
   LocationSummary* locations =
       new (allocator) LocationSummary(invoke, LocationSummary::kCallOnSlowPath, kIntrinsified);
   locations->SetInAt(0, Location::RequiresRegister());

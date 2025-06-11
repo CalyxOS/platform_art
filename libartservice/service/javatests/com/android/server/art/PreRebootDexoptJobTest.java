@@ -17,6 +17,7 @@
 package com.android.server.art;
 
 import static com.android.server.art.PreRebootDexoptJob.JOB_ID;
+import static com.android.server.art.prereboot.PreRebootDriver.PreRebootResult;
 
 import static com.google.common.truth.Truth.assertThat;
 
@@ -36,6 +37,10 @@ import android.app.job.JobParameters;
 import android.app.job.JobScheduler;
 import android.os.CancellationSignal;
 import android.os.SystemProperties;
+import android.os.UpdateEngine;
+import android.platform.test.annotations.DisableFlags;
+import android.platform.test.annotations.EnableFlags;
+import android.platform.test.flag.junit.SetFlagsRule;
 import android.provider.DeviceConfig;
 
 import androidx.test.filters.SmallTest;
@@ -56,6 +61,7 @@ import java.io.File;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 @SmallTest
 @RunWith(MockitoJUnitRunner.StrictStubs.class)
@@ -65,11 +71,13 @@ public class PreRebootDexoptJobTest {
     @Rule
     public StaticMockitoRule mockitoRule = new StaticMockitoRule(
             SystemProperties.class, BackgroundDexoptJobService.class, ArtJni.class);
+    @Rule public final SetFlagsRule mSetFlagsRule = new SetFlagsRule();
 
     @Mock private PreRebootDexoptJob.Injector mInjector;
     @Mock private JobScheduler mJobScheduler;
     @Mock private PreRebootDriver mPreRebootDriver;
     @Mock private BackgroundDexoptJobService mJobService;
+    @Mock private UpdateEngine mUpdateEngine;
     @Mock private PreRebootStatsReporter.Injector mPreRebootStatsReporterInjector;
     private PreRebootDexoptJob mPreRebootDexoptJob;
     private JobInfo mJobInfo;
@@ -100,6 +108,7 @@ public class PreRebootDexoptJobTest {
                 .when(mInjector.getStatsReporter())
                 .thenAnswer(
                         invocation -> new PreRebootStatsReporter(mPreRebootStatsReporterInjector));
+        lenient().when(mInjector.getUpdateEngine()).thenReturn(mUpdateEngine);
 
         File tempFile = File.createTempFile("pre-reboot-stats", ".pb");
         tempFile.deleteOnExit();
@@ -130,6 +139,14 @@ public class PreRebootDexoptJobTest {
 
         mPreRebootDexoptJob = new PreRebootDexoptJob(mInjector);
         lenient().when(BackgroundDexoptJobService.getJob(JOB_ID)).thenReturn(mPreRebootDexoptJob);
+
+        lenient()
+                .doAnswer(invocation -> {
+                    CompletableFuture<?> unused = mPreRebootDexoptJob.notifyUpdateEngineReady();
+                    return null;
+                })
+                .when(mUpdateEngine)
+                .triggerPostinstall("system");
     }
 
     @Test
@@ -160,7 +177,7 @@ public class PreRebootDexoptJobTest {
                 .thenReturn(true);
 
         CompletableFuture<Void> future = mPreRebootDexoptJob.onUpdateReadyStartNow(
-                null /* otaSlot */, false /* mapSnapshotsForOta */);
+                null /* otaSlot */, true /* isUpdataEngineReady */);
 
         assertThat(future).isNull();
         verify(mPreRebootDriver, never()).run(any(), anyBoolean(), any());
@@ -183,7 +200,7 @@ public class PreRebootDexoptJobTest {
                 .thenReturn(false);
 
         CompletableFuture<Void> future = mPreRebootDexoptJob.onUpdateReadyStartNow(
-                null /* otaSlot */, false /* mapSnapshotsForOta */);
+                null /* otaSlot */, true /* isUpdataEngineReady */);
 
         assertThat(future).isNull();
         verify(mPreRebootDriver, never()).run(any(), anyBoolean(), any());
@@ -230,13 +247,13 @@ public class PreRebootDexoptJobTest {
         verify(mJobScheduler).cancel(JOB_ID);
     }
 
-    @Test
-    public void testStart() throws Exception {
+    private void checkStart(String otaSlot, Supplier<Boolean> mapSnapshotsForOtaMatcher)
+            throws Exception {
         var jobStarted = new Semaphore(0);
-        when(mPreRebootDriver.run(any(), eq(true) /* mapSnapshotsForOta */, any()))
+        when(mPreRebootDriver.run(eq(otaSlot), mapSnapshotsForOtaMatcher.get(), any()))
                 .thenAnswer(invocation -> {
                     jobStarted.release();
-                    return true;
+                    return new PreRebootResult(true /* success */);
                 });
 
         when(ArtJni.setProperty("dalvik.vm.pre-reboot.has-started", "true"))
@@ -248,7 +265,7 @@ public class PreRebootDexoptJobTest {
                 });
 
         assertThat(mPreRebootDexoptJob.hasStarted()).isFalse();
-        mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */);
+        mPreRebootDexoptJob.onUpdateReadyImpl(otaSlot);
         mPreRebootDexoptJob.onStartJobImpl(mJobService, mJobParameters);
         assertThat(jobStarted.tryAcquire(TIMEOUT_SEC, TimeUnit.SECONDS)).isTrue();
         assertThat(mPreRebootDexoptJob.hasStarted()).isTrue();
@@ -257,14 +274,54 @@ public class PreRebootDexoptJobTest {
     }
 
     @Test
-    public void testSyncStart() throws Exception {
-        when(mPreRebootDriver.run(any(), eq(false) /* mapSnapshotsForOta */, any()))
-                .thenReturn(true);
+    @EnableFlags({android.os.Flags.FLAG_UPDATE_ENGINE_API})
+    public void testStartWithUpdateEngineApi() throws Exception {
+        checkStart("_b" /* otaSlot */, () -> eq(false) /* mapSnapshotsForOtaMatcher */);
+        verify(mUpdateEngine).triggerPostinstall("system");
+    }
 
-        CompletableFuture<Void> future = mPreRebootDexoptJob.onUpdateReadyStartNow(
-                null /* otaSlot */, false /* mapSnapshotsForOta */);
+    @Test
+    @DisableFlags({android.os.Flags.FLAG_UPDATE_ENGINE_API})
+    public void testStartWithoutUpdateEngineApi() throws Exception {
+        checkStart("_b" /* otaSlot */, () -> eq(true) /* mapSnapshotsForOtaMatcher */);
+        verify(mUpdateEngine, never()).triggerPostinstall(any());
+    }
+
+    @Test
+    public void testStartMainline() throws Exception {
+        checkStart(null /* otaSlot */, () -> anyBoolean() /* mapSnapshotsForOtaMatcher */);
+        verify(mUpdateEngine, never()).triggerPostinstall(any());
+    }
+
+    private void checkSyncStart(boolean isUpdateEngineReady, boolean expectedMapSnapshotsForOta)
+            throws Exception {
+        when(mPreRebootDriver.run(eq("_b"), eq(expectedMapSnapshotsForOta), any()))
+                .thenReturn(new PreRebootResult(true /* success */));
+
+        CompletableFuture<Void> future =
+                mPreRebootDexoptJob.onUpdateReadyStartNow("_b" /* otaSlot */, isUpdateEngineReady);
 
         Utils.getFuture(future);
+    }
+
+    @Test
+    @EnableFlags({android.os.Flags.FLAG_UPDATE_ENGINE_API})
+    public void testSyncStartWithUpdateEngineApi() throws Exception {
+        checkSyncStart(false /* isUpdataEngineReady */, false /* expectedMapSnapshotsForOta */);
+        verify(mUpdateEngine).triggerPostinstall("system");
+    }
+
+    @Test
+    @DisableFlags({android.os.Flags.FLAG_UPDATE_ENGINE_API})
+    public void testSyncStartWithoutUpdateEngineApi() throws Exception {
+        checkSyncStart(false /* isUpdataEngineReady */, true /* expectedMapSnapshotsForOta */);
+        verify(mUpdateEngine, never()).triggerPostinstall(any());
+    }
+
+    @Test
+    public void testSyncStartWithIsUpdateEngineReady() throws Exception {
+        checkSyncStart(true /* isUpdataEngineReady */, false /* expectedMapSnapshotsForOta */);
+        verify(mUpdateEngine, never()).triggerPostinstall(any());
     }
 
     @Test
@@ -276,7 +333,7 @@ public class PreRebootDexoptJobTest {
             cancellationSignal.setOnCancelListener(() -> dexoptCancelled.release());
             assertThat(dexoptCancelled.tryAcquire(TIMEOUT_SEC, TimeUnit.SECONDS)).isTrue();
             jobExited.release();
-            return true;
+            return new PreRebootResult(true /* success */);
         });
 
         mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */);
@@ -297,11 +354,11 @@ public class PreRebootDexoptJobTest {
             cancellationSignal.setOnCancelListener(() -> dexoptCancelled.release());
             assertThat(dexoptCancelled.tryAcquire(TIMEOUT_SEC, TimeUnit.SECONDS)).isTrue();
             jobExited.release();
-            return true;
+            return new PreRebootResult(true /* success */);
         });
 
         CompletableFuture<Void> future = mPreRebootDexoptJob.onUpdateReadyStartNow(
-                null /* otaSlot */, false /* mapSnapshotsForOta */);
+                null /* otaSlot */, true /* isUpdataEngineReady */);
         mPreRebootDexoptJob.cancelGiven(future, false /* expectInterrupt */);
 
         // Check that `cancelGiven` is really blocking. If it wasn't, the check below might still
@@ -314,7 +371,8 @@ public class PreRebootDexoptJobTest {
         mPreRebootDexoptJob.onUpdateReadyImpl("_b" /* otaSlot */);
         mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */);
 
-        when(mPreRebootDriver.run(eq("_b"), anyBoolean(), any())).thenReturn(true);
+        when(mPreRebootDriver.run(eq("_b"), anyBoolean(), any()))
+                .thenReturn(new PreRebootResult(true /* success */));
 
         mPreRebootDexoptJob.onStartJobImpl(mJobService, mJobParameters);
         mPreRebootDexoptJob.waitForRunningJob();
@@ -325,7 +383,8 @@ public class PreRebootDexoptJobTest {
         mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */);
         mPreRebootDexoptJob.onUpdateReadyImpl("_a" /* otaSlot */);
 
-        when(mPreRebootDriver.run(eq("_a"), anyBoolean(), any())).thenReturn(true);
+        when(mPreRebootDriver.run(eq("_a"), anyBoolean(), any()))
+                .thenReturn(new PreRebootResult(true /* success */));
 
         mPreRebootDexoptJob.onStartJobImpl(mJobService, mJobParameters);
         mPreRebootDexoptJob.waitForRunningJob();
@@ -336,7 +395,8 @@ public class PreRebootDexoptJobTest {
         mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */);
         mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */);
 
-        when(mPreRebootDriver.run(isNull(), anyBoolean(), any())).thenReturn(true);
+        when(mPreRebootDriver.run(isNull(), anyBoolean(), any()))
+                .thenReturn(new PreRebootResult(true /* success */));
 
         mPreRebootDexoptJob.onStartJobImpl(mJobService, mJobParameters);
         mPreRebootDexoptJob.waitForRunningJob();
@@ -347,7 +407,8 @@ public class PreRebootDexoptJobTest {
         mPreRebootDexoptJob.onUpdateReadyImpl("_b" /* otaSlot */);
         mPreRebootDexoptJob.onUpdateReadyImpl("_b" /* otaSlot */);
 
-        when(mPreRebootDriver.run(eq("_b"), anyBoolean(), any())).thenReturn(true);
+        when(mPreRebootDriver.run(eq("_b"), anyBoolean(), any()))
+                .thenReturn(new PreRebootResult(true /* success */));
 
         mPreRebootDexoptJob.onStartJobImpl(mJobService, mJobParameters);
         mPreRebootDexoptJob.waitForRunningJob();
@@ -375,7 +436,7 @@ public class PreRebootDexoptJobTest {
         when(mPreRebootDriver.run(any(), anyBoolean(), any())).thenAnswer(invocation -> {
             // Simulate that the job takes a while to exit, no matter it's cancelled or not.
             assertThat(jobBlocker.tryAcquire(TIMEOUT_SEC, TimeUnit.SECONDS)).isTrue();
-            return true;
+            return new PreRebootResult(true /* success */);
         });
 
         // An update arrives. A job is scheduled.
@@ -461,7 +522,7 @@ public class PreRebootDexoptJobTest {
             cancellationSignal.setOnCancelListener(() -> dexoptCancelled.release());
             assertThat(dexoptCancelled.tryAcquire(TIMEOUT_SEC, TimeUnit.SECONDS)).isTrue();
             jobExited.release();
-            return true;
+            return new PreRebootResult(true /* success */);
         });
 
         // An update arrives. A job is scheduled.
@@ -475,7 +536,7 @@ public class PreRebootDexoptJobTest {
         // `onUpdateReadyStartNow`, before the job scheduler calls `onStartJob`.
         JobParameters oldParameters = mJobParameters;
         CompletableFuture<Void> future = mPreRebootDexoptJob.onUpdateReadyStartNow(
-                null /* otaSlot */, false /* mapSnapshotsForOta */);
+                null /* otaSlot */, true /* isUpdataEngineReady */);
 
         // The old job should be cancelled at this point.
         // This cannot be the new job having exited because jobs are serialized.

@@ -14,12 +14,18 @@
  * limitations under the License.
  */
 
+#include <dlfcn.h>
+
 #include "base/sdk_version.h"
 #include "dex/art_dex_file_loader.h"
 #include "hidden_api.h"
 #include "jni.h"
 #include "runtime.h"
 #include "ti-agent/scoped_utf_chars.h"
+
+#ifdef ART_TARGET_ANDROID
+#include "nativeloader/dlext_namespaces.h"
+#endif
 
 namespace art {
 namespace Test674HiddenApi {
@@ -28,6 +34,30 @@ namespace Test674HiddenApi {
 static constexpr uint64_t kPreventMetaReflectionBlocklistAccess = 142365358;
 
 std::vector<std::vector<std::unique_ptr<const DexFile>>> opened_dex_files;
+
+// The JNI entrypoints below end up in libarttest(d).so, while the test makes
+// copies of libarttest(d)_external.so and loads them instead. Those libs depend
+// on libarttest(d).so, so its exported symbols become visible directly in them.
+// Hence we don't need to create wrappers for the JNI methods in
+// libarttest(d)_external.so.
+
+extern "C" JNIEXPORT void JNICALL
+Java_Main_addDefaultNamespaceLibsLinkToSystemLinkerNamespace(JNIEnv*, jclass) {
+#ifdef ART_TARGET_ANDROID
+  const char* links = getenv("NATIVELOADER_DEFAULT_NAMESPACE_LIBS");
+  if (links == nullptr || *links == 0) {
+    LOG(FATAL) << "Expected NATIVELOADER_DEFAULT_NAMESPACE_LIBS to be set";
+  }
+  struct android_namespace_t* system_ns = android_get_exported_namespace("system");
+  if (system_ns == nullptr) {
+    LOG(FATAL) << "Failed to retrieve system namespace";
+  }
+  if (!android_link_namespaces(system_ns, nullptr, links)) {
+    LOG(FATAL) << "Error adding linker namespace link from system to default for " << links << ": "
+               << dlerror();
+  }
+#endif
+}
 
 extern "C" JNIEXPORT void JNICALL Java_Main_init(JNIEnv*, jclass) {
   Runtime* runtime = Runtime::Current();

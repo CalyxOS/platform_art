@@ -67,9 +67,7 @@ class ObjectHandler implements AhatHandler {
 
     printAllocationSite(doc, query, inst);
 
-    if (!inst.isUnreachable()) {
-      printGcRootPath(doc, query, inst);
-    }
+    printSamplePath(doc, query, inst);
 
     doc.section("Object Info");
     AhatClassObj cls = inst.getClassObj();
@@ -127,6 +125,12 @@ class ObjectHandler implements AhatHandler {
         new Column("Index", Column.Align.RIGHT),
         new Column("Value"),
         new Column("Δ", Column.Align.LEFT, diff));
+
+    if (array.hasByteArray()) {
+      doc.println(
+        DocString.link(DocString.uri("array?id=" + array.getId()),
+        DocString.text("📂 Download bytes")));
+    }
 
     List<Value> elements = array.getValues();
     SubsetSelector<Value> selector = new SubsetSelector(query, ARRAY_ELEMENTS_ID, elements);
@@ -252,13 +256,17 @@ class ObjectHandler implements AhatHandler {
     }
   }
 
-  private void printGcRootPath(Doc doc, Query query, AhatInstance inst) {
-    doc.section("Sample Path from GC Root");
-    List<PathElement> path = inst.getPathFromGcRoot();
+  private void printSamplePath(Doc doc, Query query, AhatInstance inst) {
+    List<PathElement> path = inst.getSamplePath();
 
     // Add a fake PathElement as a marker for the root.
     final PathElement root = new PathElement(null, null);
-    path.add(0, root);
+    if (inst.isUnreachable()) {
+      doc.section("Sample Path");
+    } else {
+      doc.section("Sample Path from GC Root");
+      path.add(0, root);
+    }
 
     HeapTable.TableConfig<PathElement> table = new HeapTable.TableConfig<PathElement>() {
       public String getHeapsDescription() {

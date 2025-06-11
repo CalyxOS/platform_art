@@ -16,6 +16,8 @@
 
 #include "oat_file.h"
 
+#include <dlfcn.h>
+
 #include <string>
 
 #include "common_runtime_test.h"
@@ -91,6 +93,58 @@ TEST_F(OatFileTest, ChangingMultiDexUncompressed) {
   EXPECT_TRUE(odex_file == nullptr);
   EXPECT_NE(std::string::npos, error_msg.find("expected 2 uncompressed dex files, but found 1"))
       << error_msg;
+}
+
+TEST_F(OatFileTest, DlOpenLoad) {
+  std::string dex_location = GetScratchDir() + "/LoadOat.jar";
+
+  Copy(GetDexSrc1(), dex_location);
+  GenerateOatForTest(dex_location.c_str(), CompilerFilter::kSpeed);
+
+  std::string oat_location;
+  std::string error_msg;
+  ASSERT_TRUE(OatFileAssistant::DexLocationToOatFilename(
+      dex_location, kRuntimeISA, &oat_location, &error_msg))
+      << error_msg;
+
+  // Clear previous errors if any.
+  dlerror();
+  error_msg.clear();
+  std::unique_ptr<OatFile> odex_file(OatFile::Open(/*zip_fd=*/-1,
+                                                   oat_location,
+                                                   oat_location,
+                                                   /*executable=*/true,
+                                                   /*low_4gb=*/false,
+                                                   dex_location,
+                                                   &error_msg));
+  ASSERT_NE(odex_file.get(), nullptr) << error_msg;
+
+#ifdef __GLIBC__
+  if (!error_msg.empty()) {
+    // If a valid oat file was returned but there was an error message, then dlopen failed
+    // but the backup ART ELF loader successfully loaded the oat file.
+    // The only expected reason for this is a bug in glibc that prevents loading dynamic
+    // shared objects with a read-only dynamic section:
+    // https://sourceware.org/bugzilla/show_bug.cgi?id=28340.
+    ASSERT_TRUE(error_msg == "DlOpen does not support read-only .dynamic section.") << error_msg;
+    GTEST_SKIP() << error_msg;
+  }
+#else
+  // If a valid oat file was returned with no error message, then dlopen was successful.
+  ASSERT_TRUE(error_msg.empty()) << error_msg;
+#endif
+
+  const char *dlerror_msg = dlerror();
+  ASSERT_EQ(dlerror_msg, nullptr) << dlerror_msg;
+
+  // Ensure that the oat file is loaded with dlopen by requesting information about it
+  // using dladdr.
+  Dl_info info;
+  ASSERT_NE(dladdr(odex_file->Begin(), &info), 0);
+  EXPECT_STREQ(info.dli_fname, oat_location.c_str())
+      << "dli_fname: " << info.dli_fname
+      << ", location: " << oat_location;
+  EXPECT_STREQ(info.dli_sname, "oatdata") << info.dli_sname;
 }
 
 }  // namespace art

@@ -33,13 +33,11 @@ TEST_F(VdexFileTest, OpenEmptyVdex) {
   std::unique_ptr<VdexFile> vdex = VdexFile::Open(tmp.GetFd(),
                                                   0,
                                                   tmp.GetFilename(),
-                                                  /*writable=*/false,
                                                   /*low_4gb=*/false,
                                                   &error_msg);
   EXPECT_TRUE(vdex == nullptr);
 
-  vdex = VdexFile::Open(
-      tmp.GetFilename(), /*writable=*/false, /*low_4gb=*/false, &error_msg);
+  vdex = VdexFile::Open(tmp.GetFilename(), /*low_4gb=*/false, &error_msg);
   EXPECT_TRUE(vdex == nullptr);
 }
 

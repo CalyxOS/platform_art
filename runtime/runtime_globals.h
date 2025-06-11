@@ -110,7 +110,12 @@ static constexpr ALWAYS_INLINE size_t ModuloPageSize(size_t num) {
 // Returns whether the given memory offset can be used for generating
 // an implicit null check.
 static inline bool CanDoImplicitNullCheckOn(uintptr_t offset) {
+#ifdef ART_USE_RESTRICTED_MODE
+  UNUSED(offset);
+  return false;
+#else
   return offset < gPageSize;
+#endif  // ART_USE_RESTRICTED_MODE
 }
 
 // Required object alignment
@@ -122,24 +127,24 @@ static constexpr bool kMovingCollector = true;
 static constexpr bool kMarkCompactSupport = false && kMovingCollector;
 // True if we allow moving classes.
 static constexpr bool kMovingClasses = !kMarkCompactSupport;
-// When using the Concurrent Copying (CC) collector, if
-// `ART_USE_GENERATIONAL_CC` is true, enable generational collection by default,
-// i.e. use sticky-bit CC for minor collections and (full) CC for major
+// When using the Concurrent Collectors (CC or CMC), if
+// `ART_USE_GENERATIONAL_GC` is true, enable generational collection by default,
+// i.e. use sticky-bit CC/CMC for minor collections and (full) CC/CMC for major
 // collections.
 // This default value can be overridden with the runtime option
-// `-Xgc:[no]generational_cc`.
+// `-Xgc:[no]generational_gc`.
 //
 // TODO(b/67628039): Consider either:
 // - renaming this to a better descriptive name (e.g.
-//   `ART_USE_GENERATIONAL_CC_BY_DEFAULT`); or
-// - removing `ART_USE_GENERATIONAL_CC` and having a fixed default value.
+//   `ART_USE_GENERATIONAL_GC_BY_DEFAULT`); or
+// - removing `ART_USE_GENERATIONAL_GC` and having a fixed default value.
 // Any of these changes will require adjusting users of this preprocessor
 // directive and the corresponding build system environment variable (e.g. in
 // ART's continuous testing).
-#ifdef ART_USE_GENERATIONAL_CC
-static constexpr bool kEnableGenerationalCCByDefault = true;
+#ifdef ART_USE_GENERATIONAL_GC
+static constexpr bool kEnableGenerationalGCByDefault = true;
 #else
-static constexpr bool kEnableGenerationalCCByDefault = false;
+static constexpr bool kEnableGenerationalGCByDefault = false;
 #endif
 
 // If true, enable the tlab allocator by default.

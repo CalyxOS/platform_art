@@ -16,7 +16,7 @@
 
 .super Ljava/lang/Object;
 
-## CHECK-START: boolean TestCase.testCase() select_generator (after)
+## CHECK-START: boolean TestCase.testCase() control_flow_simplifier (after)
 ## CHECK-DAG:     <<Select:i\d+>>          Select
 ## CHECK-DAG:                              Return [<<Select>>]
 

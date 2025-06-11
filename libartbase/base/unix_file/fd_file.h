@@ -29,6 +29,9 @@ namespace unix_file {
 // If true, check whether Flush and Close are called before destruction.
 static constexpr bool kCheckSafeUsage = true;
 
+// Used to work around kernel bugs.
+bool AllowSparseFiles();
+
 // A RandomAccessFile implementation backed by a file descriptor.
 //
 // Not thread safe.

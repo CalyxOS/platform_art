@@ -375,10 +375,7 @@ class NullCheckSlowPathARMVIXL : public SlowPathCodeARMVIXL {
       // Live registers will be restored in the catch block if caught.
       SaveLiveRegisters(codegen, instruction_->GetLocations());
     }
-    arm_codegen->InvokeRuntime(kQuickThrowNullPointer,
-                               instruction_,
-                               instruction_->GetDexPc(),
-                               this);
+    arm_codegen->InvokeRuntime(kQuickThrowNullPointer, instruction_, this);
     CheckEntrypointTypes<kQuickThrowNullPointer, void, void>();
   }
 
@@ -398,7 +395,7 @@ class DivZeroCheckSlowPathARMVIXL : public SlowPathCodeARMVIXL {
   void EmitNativeCode(CodeGenerator* codegen) override {
     CodeGeneratorARMVIXL* arm_codegen = down_cast<CodeGeneratorARMVIXL*>(codegen);
     __ Bind(GetEntryLabel());
-    arm_codegen->InvokeRuntime(kQuickThrowDivZero, instruction_, instruction_->GetDexPc(), this);
+    arm_codegen->InvokeRuntime(kQuickThrowDivZero, instruction_, this);
     CheckEntrypointTypes<kQuickThrowDivZero, void, void>();
   }
 
@@ -418,7 +415,7 @@ class SuspendCheckSlowPathARMVIXL : public SlowPathCodeARMVIXL {
   void EmitNativeCode(CodeGenerator* codegen) override {
     CodeGeneratorARMVIXL* arm_codegen = down_cast<CodeGeneratorARMVIXL*>(codegen);
     __ Bind(GetEntryLabel());
-    arm_codegen->InvokeRuntime(kQuickTestSuspend, instruction_, instruction_->GetDexPc(), this);
+    arm_codegen->InvokeRuntime(kQuickTestSuspend, instruction_, this);
     CheckEntrypointTypes<kQuickTestSuspend, void, void>();
     if (successor_ == nullptr) {
       __ B(GetReturnLabel());
@@ -475,7 +472,7 @@ class BoundsCheckSlowPathARMVIXL : public SlowPathCodeARMVIXL {
     QuickEntrypointEnum entrypoint = instruction_->AsBoundsCheck()->IsStringCharAt()
         ? kQuickThrowStringBounds
         : kQuickThrowArrayBounds;
-    arm_codegen->InvokeRuntime(entrypoint, instruction_, instruction_->GetDexPc(), this);
+    arm_codegen->InvokeRuntime(entrypoint, instruction_, this);
     CheckEntrypointTypes<kQuickThrowStringBounds, void, int32_t, int32_t>();
     CheckEntrypointTypes<kQuickThrowArrayBounds, void, int32_t, int32_t>();
   }
@@ -499,7 +496,6 @@ class LoadClassSlowPathARMVIXL : public SlowPathCodeARMVIXL {
   void EmitNativeCode(CodeGenerator* codegen) override {
     LocationSummary* locations = instruction_->GetLocations();
     Location out = locations->Out();
-    const uint32_t dex_pc = instruction_->GetDexPc();
     bool must_resolve_type = instruction_->IsLoadClass() && cls_->MustResolveTypeOnSlowPath();
     bool must_do_clinit = instruction_->IsClinitCheck() || cls_->MustGenerateClinitCheck();
 
@@ -517,10 +513,10 @@ class LoadClassSlowPathARMVIXL : public SlowPathCodeARMVIXL {
       __ Mov(calling_convention.GetRegisterAt(0), type_index.index_);
       if (cls_->NeedsAccessCheck()) {
         CheckEntrypointTypes<kQuickResolveTypeAndVerifyAccess, void*, uint32_t>();
-        arm_codegen->InvokeRuntime(kQuickResolveTypeAndVerifyAccess, instruction_, dex_pc, this);
+        arm_codegen->InvokeRuntime(kQuickResolveTypeAndVerifyAccess, instruction_, this);
       } else {
         CheckEntrypointTypes<kQuickResolveType, void*, uint32_t>();
-        arm_codegen->InvokeRuntime(kQuickResolveType, instruction_, dex_pc, this);
+        arm_codegen->InvokeRuntime(kQuickResolveType, instruction_, this);
       }
       // If we also must_do_clinit, the resolved type is now in the correct register.
     } else {
@@ -529,7 +525,7 @@ class LoadClassSlowPathARMVIXL : public SlowPathCodeARMVIXL {
       arm_codegen->Move32(LocationFrom(calling_convention.GetRegisterAt(0)), source);
     }
     if (must_do_clinit) {
-      arm_codegen->InvokeRuntime(kQuickInitializeStaticStorage, instruction_, dex_pc, this);
+      arm_codegen->InvokeRuntime(kQuickInitializeStaticStorage, instruction_, this);
       CheckEntrypointTypes<kQuickInitializeStaticStorage, void*, mirror::Class*>();
     }
 
@@ -569,7 +565,7 @@ class LoadStringSlowPathARMVIXL : public SlowPathCodeARMVIXL {
 
     InvokeRuntimeCallingConventionARMVIXL calling_convention;
     __ Mov(calling_convention.GetRegisterAt(0), string_index.index_);
-    arm_codegen->InvokeRuntime(kQuickResolveString, instruction_, instruction_->GetDexPc(), this);
+    arm_codegen->InvokeRuntime(kQuickResolveString, instruction_, this);
     CheckEntrypointTypes<kQuickResolveString, void*, uint32_t>();
 
     arm_codegen->Move32(locations->Out(), LocationFrom(r0));
@@ -612,18 +608,12 @@ class TypeCheckSlowPathARMVIXL : public SlowPathCodeARMVIXL {
                                LocationFrom(calling_convention.GetRegisterAt(1)),
                                DataType::Type::kReference);
     if (instruction_->IsInstanceOf()) {
-      arm_codegen->InvokeRuntime(kQuickInstanceofNonTrivial,
-                                 instruction_,
-                                 instruction_->GetDexPc(),
-                                 this);
+      arm_codegen->InvokeRuntime(kQuickInstanceofNonTrivial, instruction_, this);
       CheckEntrypointTypes<kQuickInstanceofNonTrivial, size_t, mirror::Object*, mirror::Class*>();
       arm_codegen->Move32(locations->Out(), LocationFrom(r0));
     } else {
       DCHECK(instruction_->IsCheckCast());
-      arm_codegen->InvokeRuntime(kQuickCheckInstanceOf,
-                                 instruction_,
-                                 instruction_->GetDexPc(),
-                                 this);
+      arm_codegen->InvokeRuntime(kQuickCheckInstanceOf, instruction_, this);
       CheckEntrypointTypes<kQuickCheckInstanceOf, void, mirror::Object*, mirror::Class*>();
     }
 
@@ -657,7 +647,7 @@ class DeoptimizationSlowPathARMVIXL : public SlowPathCodeARMVIXL {
     __ Mov(calling_convention.GetRegisterAt(0),
            static_cast<uint32_t>(instruction_->AsDeoptimize()->GetDeoptimizationKind()));
 
-    arm_codegen->InvokeRuntime(kQuickDeoptimize, instruction_, instruction_->GetDexPc(), this);
+    arm_codegen->InvokeRuntime(kQuickDeoptimize, instruction_, this);
     CheckEntrypointTypes<kQuickDeoptimize, void, DeoptimizationKind>();
   }
 
@@ -696,7 +686,7 @@ class ArraySetSlowPathARMVIXL : public SlowPathCodeARMVIXL {
     codegen->GetMoveResolver()->EmitNativeCode(&parallel_move);
 
     CodeGeneratorARMVIXL* arm_codegen = down_cast<CodeGeneratorARMVIXL*>(codegen);
-    arm_codegen->InvokeRuntime(kQuickAputObject, instruction_, instruction_->GetDexPc(), this);
+    arm_codegen->InvokeRuntime(kQuickAputObject, instruction_, this);
     CheckEntrypointTypes<kQuickAputObject, void, mirror::Array*, int32_t, mirror::Object*>();
     RestoreLiveRegisters(codegen, locations);
     __ B(GetExitLabel());
@@ -854,7 +844,7 @@ class ReadBarrierForHeapReferenceSlowPathARMVIXL : public SlowPathCodeARMVIXL {
       codegen->GetMoveResolver()->EmitNativeCode(&parallel_move);
       __ Mov(calling_convention.GetRegisterAt(2), offset_);
     }
-    arm_codegen->InvokeRuntime(kQuickReadBarrierSlow, instruction_, instruction_->GetDexPc(), this);
+    arm_codegen->InvokeRuntime(kQuickReadBarrierSlow, instruction_, this);
     CheckEntrypointTypes<
         kQuickReadBarrierSlow, mirror::Object*, mirror::Object*, mirror::Object*, uint32_t>();
     arm_codegen->Move32(out_, LocationFrom(r0));
@@ -922,10 +912,7 @@ class ReadBarrierForRootSlowPathARMVIXL : public SlowPathCodeARMVIXL {
     InvokeRuntimeCallingConventionARMVIXL calling_convention;
     CodeGeneratorARMVIXL* arm_codegen = down_cast<CodeGeneratorARMVIXL*>(codegen);
     arm_codegen->Move32(LocationFrom(calling_convention.GetRegisterAt(0)), root_);
-    arm_codegen->InvokeRuntime(kQuickReadBarrierForRootSlow,
-                               instruction_,
-                               instruction_->GetDexPc(),
-                               this);
+    arm_codegen->InvokeRuntime(kQuickReadBarrierForRootSlow, instruction_, this);
     CheckEntrypointTypes<kQuickReadBarrierForRootSlow, mirror::Object*, GcRoot<mirror::Object>*>();
     arm_codegen->Move32(out_, LocationFrom(r0));
 
@@ -958,7 +945,7 @@ class MethodEntryExitHooksSlowPathARMVIXL : public SlowPathCodeARMVIXL {
       // Load frame size to pass to the exit hooks
       __ Mov(vixl::aarch32::Register(R2), arm_codegen->GetFrameSize());
     }
-    arm_codegen->InvokeRuntime(entry_point, instruction_, instruction_->GetDexPc(), this);
+    arm_codegen->InvokeRuntime(entry_point, instruction_, this);
     RestoreLiveRegisters(codegen, locations);
     __ B(GetExitLabel());
   }
@@ -2420,7 +2407,7 @@ void CodeGeneratorARMVIXL::GenerateFrameEntry() {
                            vixl32::kMaxInstructionSizeInBytes,
                            CodeBufferCheckScope::kMaximumSize);
     __ ldr(temp, MemOperand(temp));
-    RecordPcInfo(nullptr, 0);
+    RecordPcInfoForFrameOrBlockEntry();
   }
 
   uint32_t frame_size = GetFrameSize();
@@ -2787,7 +2774,6 @@ void CodeGeneratorARMVIXL::AddLocationAsTemp(Location location, LocationSummary*
 
 void CodeGeneratorARMVIXL::InvokeRuntime(QuickEntrypointEnum entrypoint,
                                          HInstruction* instruction,
-                                         uint32_t dex_pc,
                                          SlowPathCode* slow_path) {
   ValidateInvokeRuntime(entrypoint, instruction, slow_path);
 
@@ -2804,7 +2790,7 @@ void CodeGeneratorARMVIXL::InvokeRuntime(QuickEntrypointEnum entrypoint,
                            CodeBufferCheckScope::kExactSize);
     __ blx(lr);
     if (EntrypointRequiresStackMap(entrypoint)) {
-      RecordPcInfo(instruction, dex_pc, slow_path);
+      RecordPcInfo(instruction, slow_path);
     }
   } else {
     // Ensure the pc position is recorded immediately after the `bl` instruction.
@@ -2813,7 +2799,7 @@ void CodeGeneratorARMVIXL::InvokeRuntime(QuickEntrypointEnum entrypoint,
                            CodeBufferCheckScope::kExactSize);
     EmitEntrypointThunkCall(entrypoint_offset);
     if (EntrypointRequiresStackMap(entrypoint)) {
-      RecordPcInfo(instruction, dex_pc, slow_path);
+      RecordPcInfo(instruction, slow_path);
     }
   }
 }
@@ -3709,7 +3695,7 @@ void CodeGeneratorARMVIXL::MaybeGenerateInlineCacheCheck(HInstruction* instructi
       // Fast path for a monomorphic cache.
       __ Cmp(klass, ip);
       __ B(eq, &done, /* is_far_target= */ false);
-      InvokeRuntime(kQuickUpdateInlineCache, instruction, instruction->GetDexPc());
+      InvokeRuntime(kQuickUpdateInlineCache, instruction);
       __ Bind(&done);
     } else {
       // This is unexpected, but we don't guarantee stable compilation across
@@ -3803,7 +3789,7 @@ void InstructionCodeGeneratorARMVIXL::VisitInvokeInterface(HInvokeInterface* inv
                            CodeBufferCheckScope::kExactSize);
     // LR();
     __ blx(lr);
-    codegen_->RecordPcInfo(invoke, invoke->GetDexPc());
+    codegen_->RecordPcInfo(invoke);
     DCHECK(!codegen_->IsLeafMethod());
   }
 
@@ -4180,12 +4166,12 @@ void InstructionCodeGeneratorARMVIXL::VisitTypeConversion(HTypeConversion* conve
           break;
 
         case DataType::Type::kFloat32:
-          codegen_->InvokeRuntime(kQuickF2l, conversion, conversion->GetDexPc());
+          codegen_->InvokeRuntime(kQuickF2l, conversion);
           CheckEntrypointTypes<kQuickF2l, int64_t, float>();
           break;
 
         case DataType::Type::kFloat64:
-          codegen_->InvokeRuntime(kQuickD2l, conversion, conversion->GetDexPc());
+          codegen_->InvokeRuntime(kQuickD2l, conversion);
           CheckEntrypointTypes<kQuickD2l, int64_t, double>();
           break;
 
@@ -4208,7 +4194,7 @@ void InstructionCodeGeneratorARMVIXL::VisitTypeConversion(HTypeConversion* conve
           break;
 
         case DataType::Type::kInt64:
-          codegen_->InvokeRuntime(kQuickL2f, conversion, conversion->GetDexPc());
+          codegen_->InvokeRuntime(kQuickL2f, conversion);
           CheckEntrypointTypes<kQuickL2f, float, int64_t>();
           break;
 
@@ -4773,7 +4759,7 @@ void InstructionCodeGeneratorARMVIXL::VisitDiv(HDiv* div) {
         DCHECK(calling_convention.GetRegisterAt(1).Is(RegisterFrom(rhs)));
         DCHECK(r0.Is(OutputRegister(div)));
 
-        codegen_->InvokeRuntime(kQuickIdivmod, div, div->GetDexPc());
+        codegen_->InvokeRuntime(kQuickIdivmod, div);
         CheckEntrypointTypes<kQuickIdivmod, int32_t, int32_t, int32_t>();
       }
       break;
@@ -4788,7 +4774,7 @@ void InstructionCodeGeneratorARMVIXL::VisitDiv(HDiv* div) {
       DCHECK(LowRegisterFrom(div->GetLocations()->Out()).Is(r0));
       DCHECK(HighRegisterFrom(div->GetLocations()->Out()).Is(r1));
 
-      codegen_->InvokeRuntime(kQuickLdiv, div, div->GetDexPc());
+      codegen_->InvokeRuntime(kQuickLdiv, div);
       CheckEntrypointTypes<kQuickLdiv, int64_t, int64_t, int64_t>();
       break;
     }
@@ -4909,26 +4895,26 @@ void InstructionCodeGeneratorARMVIXL::VisitRem(HRem* rem) {
         DCHECK(RegisterFrom(second).Is(calling_convention.GetRegisterAt(1)));
         DCHECK(out_reg.Is(r1));
 
-        codegen_->InvokeRuntime(kQuickIdivmod, rem, rem->GetDexPc());
+        codegen_->InvokeRuntime(kQuickIdivmod, rem);
         CheckEntrypointTypes<kQuickIdivmod, int32_t, int32_t, int32_t>();
       }
       break;
     }
 
     case DataType::Type::kInt64: {
-      codegen_->InvokeRuntime(kQuickLmod, rem, rem->GetDexPc());
-        CheckEntrypointTypes<kQuickLmod, int64_t, int64_t, int64_t>();
+      codegen_->InvokeRuntime(kQuickLmod, rem);
+      CheckEntrypointTypes<kQuickLmod, int64_t, int64_t, int64_t>();
       break;
     }
 
     case DataType::Type::kFloat32: {
-      codegen_->InvokeRuntime(kQuickFmodf, rem, rem->GetDexPc());
+      codegen_->InvokeRuntime(kQuickFmodf, rem);
       CheckEntrypointTypes<kQuickFmodf, float, float, float>();
       break;
     }
 
     case DataType::Type::kFloat64: {
-      codegen_->InvokeRuntime(kQuickFmod, rem, rem->GetDexPc());
+      codegen_->InvokeRuntime(kQuickFmod, rem);
       CheckEntrypointTypes<kQuickFmod, double, double, double>();
       break;
     }
@@ -5716,7 +5702,7 @@ void LocationsBuilderARMVIXL::VisitNewInstance(HNewInstance* instruction) {
 }
 
 void InstructionCodeGeneratorARMVIXL::VisitNewInstance(HNewInstance* instruction) {
-  codegen_->InvokeRuntime(instruction->GetEntrypoint(), instruction, instruction->GetDexPc());
+  codegen_->InvokeRuntime(instruction->GetEntrypoint(), instruction);
   CheckEntrypointTypes<kQuickAllocObjectWithChecks, void*, mirror::Class*>();
   codegen_->MaybeGenerateMarkingRegisterCheck(/* code= */ 12);
 }
@@ -5733,7 +5719,7 @@ void LocationsBuilderARMVIXL::VisitNewArray(HNewArray* instruction) {
 void InstructionCodeGeneratorARMVIXL::VisitNewArray(HNewArray* instruction) {
   // Note: if heap poisoning is enabled, the entry point takes care of poisoning the reference.
   QuickEntrypointEnum entrypoint = CodeGenerator::GetArrayAllocationEntrypoint(instruction);
-  codegen_->InvokeRuntime(entrypoint, instruction, instruction->GetDexPc());
+  codegen_->InvokeRuntime(entrypoint, instruction);
   CheckEntrypointTypes<kQuickAllocArrayResolved, void*, mirror::Class*, int32_t>();
   DCHECK(!codegen_->IsLeafMethod());
   codegen_->MaybeGenerateMarkingRegisterCheck(/* code= */ 13);
@@ -6443,7 +6429,7 @@ void LocationsBuilderARMVIXL::VisitStringBuilderAppend(HStringBuilderAppend* ins
 
 void InstructionCodeGeneratorARMVIXL::VisitStringBuilderAppend(HStringBuilderAppend* instruction) {
   __ Mov(r0, instruction->GetFormat()->GetValue());
-  codegen_->InvokeRuntime(kQuickStringBuilderAppend, instruction, instruction->GetDexPc());
+  codegen_->InvokeRuntime(kQuickStringBuilderAppend, instruction);
 }
 
 void LocationsBuilderARMVIXL::VisitUnresolvedInstanceFieldGet(
@@ -6459,7 +6445,6 @@ void InstructionCodeGeneratorARMVIXL::VisitUnresolvedInstanceFieldGet(
   codegen_->GenerateUnresolvedFieldAccess(instruction,
                                           instruction->GetFieldType(),
                                           instruction->GetFieldIndex(),
-                                          instruction->GetDexPc(),
                                           calling_convention);
 }
 
@@ -6476,7 +6461,6 @@ void InstructionCodeGeneratorARMVIXL::VisitUnresolvedInstanceFieldSet(
   codegen_->GenerateUnresolvedFieldAccess(instruction,
                                           instruction->GetFieldType(),
                                           instruction->GetFieldIndex(),
-                                          instruction->GetDexPc(),
                                           calling_convention);
 }
 
@@ -6493,7 +6477,6 @@ void InstructionCodeGeneratorARMVIXL::VisitUnresolvedStaticFieldGet(
   codegen_->GenerateUnresolvedFieldAccess(instruction,
                                           instruction->GetFieldType(),
                                           instruction->GetFieldIndex(),
-                                          instruction->GetDexPc(),
                                           calling_convention);
 }
 
@@ -6510,7 +6493,6 @@ void InstructionCodeGeneratorARMVIXL::VisitUnresolvedStaticFieldSet(
   codegen_->GenerateUnresolvedFieldAccess(instruction,
                                           instruction->GetFieldType(),
                                           instruction->GetFieldIndex(),
-                                          instruction->GetDexPc(),
                                           calling_convention);
 }
 
@@ -6530,7 +6512,7 @@ void CodeGeneratorARMVIXL::GenerateImplicitNullCheck(HNullCheck* instruction) {
                          vixl32::kMaxInstructionSizeInBytes,
                          CodeBufferCheckScope::kMaximumSize);
   __ ldr(temps.Acquire(), MemOperand(InputRegisterAt(instruction, 0)));
-  RecordPcInfo(instruction, instruction->GetDexPc());
+  RecordPcInfo(instruction);
 }
 
 void CodeGeneratorARMVIXL::GenerateExplicitNullCheck(HNullCheck* instruction) {
@@ -8082,7 +8064,7 @@ void InstructionCodeGeneratorARMVIXL::VisitLoadString(HLoadString* load) NO_THRE
   DCHECK_EQ(load->GetLoadKind(), HLoadString::LoadKind::kRuntimeCall);
   InvokeRuntimeCallingConventionARMVIXL calling_convention;
   __ Mov(calling_convention.GetRegisterAt(0), load->GetStringIndex().index_);
-  codegen_->InvokeRuntime(kQuickResolveString, load, load->GetDexPc());
+  codegen_->InvokeRuntime(kQuickResolveString, load);
   CheckEntrypointTypes<kQuickResolveString, void*, uint32_t>();
   codegen_->MaybeGenerateMarkingRegisterCheck(/* code= */ 18);
 }
@@ -8122,7 +8104,7 @@ void LocationsBuilderARMVIXL::VisitThrow(HThrow* instruction) {
 }
 
 void InstructionCodeGeneratorARMVIXL::VisitThrow(HThrow* instruction) {
-  codegen_->InvokeRuntime(kQuickDeliverException, instruction, instruction->GetDexPc());
+  codegen_->InvokeRuntime(kQuickDeliverException, instruction);
   CheckEntrypointTypes<kQuickDeliverException, void, mirror::Object*>();
 }
 
@@ -8757,8 +8739,7 @@ void LocationsBuilderARMVIXL::VisitMonitorOperation(HMonitorOperation* instructi
 
 void InstructionCodeGeneratorARMVIXL::VisitMonitorOperation(HMonitorOperation* instruction) {
   codegen_->InvokeRuntime(instruction->IsEnter() ? kQuickLockObject : kQuickUnlockObject,
-                          instruction,
-                          instruction->GetDexPc());
+                          instruction);
   if (instruction->IsEnter()) {
     CheckEntrypointTypes<kQuickLockObject, void, mirror::Object*>();
   } else {
@@ -9631,7 +9612,7 @@ void CodeGeneratorARMVIXL::GenerateStaticOrDirectCall(
                              CodeBufferCheckScope::kExactSize);
       // LR()
       __ blx(lr);
-      RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+      RecordPcInfo(invoke, slow_path);
     }
   };
   switch (invoke->GetCodePtrLocation()) {
@@ -9643,7 +9624,7 @@ void CodeGeneratorARMVIXL::GenerateStaticOrDirectCall(
                                vixl32::k32BitT32InstructionSizeInBytes,
                                CodeBufferCheckScope::kMaximumSize);
         __ bl(GetFrameEntryLabel());
-        RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+        RecordPcInfo(invoke, slow_path);
       }
       break;
     case CodePtrLocation::kCallCriticalNative: {
@@ -9733,7 +9714,7 @@ void CodeGeneratorARMVIXL::GenerateVirtualCall(
                            CodeBufferCheckScope::kExactSize);
     // LR();
     __ blx(lr);
-    RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+    RecordPcInfo(invoke, slow_path);
   }
 }
 

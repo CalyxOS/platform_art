@@ -74,13 +74,13 @@ public class Main {
   /// CHECK-DAG:     <<Phi:j\d+>>           Phi [<<One>>,<<Zero>>]
   /// CHECK-DAG:                            Return [<<Phi>>]
 
-  /// CHECK-START: long Main.booleanToLong(boolean) select_generator (after)
+  /// CHECK-START: long Main.booleanToLong(boolean) control_flow_simplifier (after)
   /// CHECK-NOT:                            IntConstant
   /// CHECK-NOT:                            Equal
   /// CHECK-NOT:                            If
   /// CHECK-NOT:                            Phi
 
-  /// CHECK-START: long Main.booleanToLong(boolean) select_generator (after)
+  /// CHECK-START: long Main.booleanToLong(boolean) control_flow_simplifier (after)
   /// CHECK:         <<Arg:z\d+>>           ParameterValue
   /// CHECK-DAG:     <<Zero:j\d+>>          LongConstant 0
   /// CHECK-DAG:     <<One:j\d+>>           LongConstant 1
@@ -114,13 +114,13 @@ public class Main {
   /// CHECK-DAG:     <<JToI:i\d+>>          TypeConversion [<<Phi>>]
   /// CHECK-DAG:                            Return [<<JToI>>]
 
-  /// CHECK-START: long Main.booleanToLong(boolean) select_generator (after)
+  /// CHECK-START: long Main.booleanToLong(boolean) control_flow_simplifier (after)
   /// CHECK-NOT:                            IntConstant
   /// CHECK-NOT:                            Equal
   /// CHECK-NOT:                            If
   /// CHECK-NOT:                            Phi
 
-  /// CHECK-START: int Main.longToIntOfBoolean() select_generator (after)
+  /// CHECK-START: int Main.longToIntOfBoolean() control_flow_simplifier (after)
   /// CHECK-DAG:     <<Zero:j\d+>>          LongConstant 0
   /// CHECK-DAG:     <<One:j\d+>>           LongConstant 1
   /// CHECK-DAG:     <<Sget:z\d+>>          StaticFieldGet

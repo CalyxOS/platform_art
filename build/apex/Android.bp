@@ -74,9 +74,6 @@ apex_defaults {
     bootclasspath_fragments: ["art-bootclasspath-fragment"],
     systemserverclasspath_fragments: ["art-systemserverclasspath-fragment"],
     compat_configs: ["libcore-platform-compat-config"],
-    required: [
-        "com.android.i18n",
-    ],
     prebuilts: [
         "art-linker-config",
         "com.android.art.init.rc",
@@ -223,7 +220,11 @@ apex_test {
     native_shared_libs: ["libart"],
     multilib: {
         both: {
-            binaries: ["imgdiag"],
+            binaries: [
+                "imgdiag",
+                "pageinfo",
+                "find_unshared_pages",
+            ],
         },
         first: {
             binaries: ["odrefresh"],

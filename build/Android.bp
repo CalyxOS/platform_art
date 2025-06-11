@@ -177,13 +177,6 @@ art_global_defaults {
             // `--exclude-libs` flag is not supported on windows/darwin.
             ldflags: ["-Wl,--exclude-libs=libziparchive.a"],
         },
-        linux_bionic: {
-            strip: {
-                // Do not strip art libs when building for linux-bionic.
-                // Otherwise we can't get any symbols out of crashes.
-                none: true,
-            },
-        },
         darwin: {
             enabled: false,
         },
@@ -200,6 +193,10 @@ art_global_defaults {
                 // clang/libunwind bugs that cause SEGVs in run-test-004-ThreadStress.
                 "-fno-omit-frame-pointer",
             ],
+            // Keep the symbols for host to symbolize crash stack traces.
+            strip: {
+                none: true,
+            },
         },
         // The build assumes that all our x86/x86_64 hosts (such as buildbots and developer
         // desktops) support at least sse4.2/popcount. This firstly implies that the ART
@@ -361,4 +358,17 @@ java_library {
             required: ["libicu_jni"],
         },
     },
+}
+
+// A version of core-icu4j only for the ART fuzzer.
+java_library {
+    name: "core-icu4j-fuzzer",
+    visibility: [
+        "//art/tools/fuzzer",
+    ],
+    static_libs: ["core-icu4j-for-host"],
+    stem: "core-icu4j",
+    compile_dex: true,
+    sdk_version: "none",
+    system_modules: "none",
 }

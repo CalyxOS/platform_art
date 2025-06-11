@@ -41,7 +41,8 @@ template <size_t kAlignment>
 inline uintptr_t MarkCompact::LiveWordsBitmap<kAlignment>::SetLiveWords(uintptr_t begin,
                                                                         size_t size) {
   const uintptr_t begin_bit_idx = MemRangeBitmap::BitIndexFromAddr(begin);
-  DCHECK(!Bitmap::TestBit(begin_bit_idx));
+  DCHECK(!Bitmap::TestBit(begin_bit_idx))
+      << "begin:" << begin << " size:" << size << " begin_bit_idx:" << begin_bit_idx;
   // Range to set bit: [begin, end]
   uintptr_t end = begin + size - kAlignment;
   const uintptr_t end_bit_idx = MemRangeBitmap::BitIndexFromAddr(end);
@@ -201,10 +202,10 @@ inline bool MarkCompact::IsOnAllocStack(mirror::Object* ref) {
   return stack->Contains(ref);
 }
 
-inline void MarkCompact::UpdateRef(mirror::Object* obj,
-                                   MemberOffset offset,
-                                   uint8_t* begin,
-                                   uint8_t* end) {
+inline mirror::Object* MarkCompact::UpdateRef(mirror::Object* obj,
+                                              MemberOffset offset,
+                                              uint8_t* begin,
+                                              uint8_t* end) {
   mirror::Object* old_ref = obj->GetFieldObject<
       mirror::Object, kVerifyNone, kWithoutReadBarrier, /*kIsVolatile*/false>(offset);
   if (kIsDebugBuild) {
@@ -240,6 +241,7 @@ inline void MarkCompact::UpdateRef(mirror::Object* obj,
             offset,
             new_ref);
   }
+  return new_ref;
 }
 
 inline bool MarkCompact::VerifyRootSingleUpdate(void* root,
@@ -280,17 +282,17 @@ inline bool MarkCompact::VerifyRootSingleUpdate(void* root,
       }
     }
     DCHECK(reinterpret_cast<uint8_t*>(old_ref) >= black_allocations_begin_ ||
-           live_words_bitmap_->Test(old_ref))
+           moving_space_bitmap_->Test(old_ref))
         << "ref=" << old_ref << " <" << mirror::Object::PrettyTypeOf(old_ref) << "> RootInfo ["
         << info << "]";
   }
   return true;
 }
 
-inline void MarkCompact::UpdateRoot(mirror::CompressedReference<mirror::Object>* root,
-                                    uint8_t* begin,
-                                    uint8_t* end,
-                                    const RootInfo& info) {
+inline mirror::Object* MarkCompact::UpdateRoot(mirror::CompressedReference<mirror::Object>* root,
+                                               uint8_t* begin,
+                                               uint8_t* end,
+                                               const RootInfo& info) {
   DCHECK(!root->IsNull());
   mirror::Object* old_ref = root->AsMirrorPtr();
   if (VerifyRootSingleUpdate(root, old_ref, info)) {
@@ -298,20 +300,24 @@ inline void MarkCompact::UpdateRoot(mirror::CompressedReference<mirror::Object>*
     if (old_ref != new_ref) {
       root->Assign(new_ref);
     }
+    return new_ref;
   }
+  return nullptr;
 }
 
-inline void MarkCompact::UpdateRoot(mirror::Object** root,
-                                    uint8_t* begin,
-                                    uint8_t* end,
-                                    const RootInfo& info) {
+inline mirror::Object* MarkCompact::UpdateRoot(mirror::Object** root,
+                                               uint8_t* begin,
+                                               uint8_t* end,
+                                               const RootInfo& info) {
   mirror::Object* old_ref = *root;
   if (VerifyRootSingleUpdate(root, old_ref, info)) {
     mirror::Object* new_ref = PostCompactAddress(old_ref, begin, end);
     if (old_ref != new_ref) {
       *root = new_ref;
     }
+    return new_ref;
   }
+  return nullptr;
 }
 
 template <size_t kAlignment>
@@ -362,8 +368,6 @@ inline mirror::Object* MarkCompact::PostCompactAddressUnchecked(mirror::Object* 
   }
   if (kIsDebugBuild) {
     mirror::Object* from_ref = GetFromSpaceAddr(old_ref);
-    DCHECK(live_words_bitmap_->Test(old_ref))
-         << "ref=" << old_ref;
     if (!moving_space_bitmap_->Test(old_ref)) {
       std::ostringstream oss;
       Runtime::Current()->GetHeap()->DumpSpaces(oss);

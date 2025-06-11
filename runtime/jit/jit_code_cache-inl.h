@@ -38,7 +38,7 @@ EXPORT void JitCodeCache::VisitRootTables(ArtMethod* method, RootVisitorType& vi
 
   Thread* self = Thread::Current();
   ScopedDebugDisallowReadBarriers sddrb(self);
-  MutexLock mu(self, *Locks::jit_lock_);
+  ReaderMutexLock mu(self, *Locks::jit_mutator_lock_);
 
   auto code_ptrs_it = method_code_map_reversed_.find(method);
   if (code_ptrs_it == method_code_map_reversed_.end()) {

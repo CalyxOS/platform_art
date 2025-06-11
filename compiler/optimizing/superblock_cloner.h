@@ -90,8 +90,7 @@ inline bool IsEdgeValid(HEdge edge, HGraph* graph) {
 // fine grain manipulation with IR; data flow and graph properties are resolved/adjusted
 // automatically. The clone transformation is defined by specifying a set of basic blocks to copy
 // and a set of rules how to treat edges, remap their successors. By using this approach such
-// optimizations as Branch Target Expansion, Loop Peeling, Loop Unrolling, Loop Versioning can be
-// implemented.
+// optimizations as Branch Target Expansion, Loop Peeling, Loop Unrolling can be implemented.
 //
 // The idea of the transformation is based on "Superblock cloning" technique described in the book
 // "Engineering a Compiler. Second Edition", Keith D. Cooper, Linda Torczon, Rice University
@@ -163,7 +162,7 @@ class SuperblockCloner : public ValueObject {
   //
   // TODO: formally describe the criteria.
   //
-  // Loop peeling, unrolling and versioning satisfy the criteria.
+  // Loop peeling and unrolling satisfy the criteria.
   bool IsFastCase() const;
 
   // Runs the copy algorithm according to the description.
@@ -299,18 +298,6 @@ class SuperblockCloner : public ValueObject {
   // Remaps copy internal edge to its origin, adjusts the phi inputs in orig_succ.
   void RemapCopyInternalEdge(HBasicBlock* orig_block, HBasicBlock* orig_succ);
 
-  // Checks whether the edges remapping info corresponds to the subgraph versioning case:
-  //  - none of the incoming edges are to be remapped (they are being duplicated).
-  //  - none of the internal edges are to be remapped.
-  bool IsRemapInfoForVersioning() const;
-
-  // Processes incoming edges for subgraph versioning case: for each incoming edge (X, Y) adds
-  // an edge (X, Y_1) where Y_1 = Copy(Y) and add corresponding phi input to copy phi.
-  //
-  // Note: such node X will now have two successors, its unconditional branch instruction
-  // will be invalid and should be adjusted to some conditional branch by the client code.
-  void CopyIncomingEdgesForVersioning();
-
   //
   // Local versions of control flow calculation/adjustment routines.
   //
@@ -376,7 +363,7 @@ class SuperblockCloner : public ValueObject {
   DISALLOW_COPY_AND_ASSIGN(SuperblockCloner);
 };
 
-// Helper class to perform loop peeling/unrolling/versioning.
+// Helper class to perform loop peeling/unrolling.
 //
 // This helper should be used when correspondence map between original and copied
 // basic blocks/instructions are demanded.
@@ -456,40 +443,12 @@ class LoopClonerHelper : public ValueObject {
     return DoLoopTransformationImpl(TransformationKind::kUnrolling);
   }
 
-  // Perform loop versioning.
-  //
-  // Control flow of an example (ignoring critical edges splitting).
-  //
-  //       Before                    After
-  //
-  //         |B|                      |B|
-  //          |                        |
-  //          v                        v
-  //         |1|                      |1|_________
-  //          |                        |          |
-  //          v                        v          v
-  //         |2|<-\                   |2|<-\     |2A|<-\
-  //         / \  /                   / \  /     /  \  /
-  //        v   v/                   |   v/      |   v/
-  //        |   |3|                  |  |3|      | |3A|
-  //        |                        | __________|
-  //        |                        ||
-  //        v                        vv
-  //       |4|                       |4|
-  //        |                         |
-  //        v                         v
-  //       |E|                       |E|
-  HBasicBlock* DoVersioning() {
-    return DoLoopTransformationImpl(TransformationKind::kVersioning);
-  }
-
   HLoopInformation* GetRegionToBeAdjusted() const { return cloner_.GetRegionToBeAdjusted(); }
 
  protected:
   enum class TransformationKind {
     kPeeling,
     kUnrolling,
-    kVersioning,
   };
 
   // Applies a specific loop transformation to the loop.
@@ -502,7 +461,7 @@ class LoopClonerHelper : public ValueObject {
   DISALLOW_COPY_AND_ASSIGN(LoopClonerHelper);
 };
 
-// Helper class to perform loop peeling/unrolling/versioning.
+// Helper class to perform loop peeling/unrolling.
 //
 // This helper should be used when there is no need to get correspondence information between
 // original and copied basic blocks/instructions.
@@ -512,7 +471,6 @@ class LoopClonerSimpleHelper : public ValueObject {
   bool IsLoopClonable() const { return helper_.IsLoopClonable(); }
   HBasicBlock* DoPeeling() { return helper_.DoPeeling(); }
   HBasicBlock* DoUnrolling() { return helper_.DoUnrolling(); }
-  HBasicBlock* DoVersioning() { return helper_.DoVersioning(); }
   HLoopInformation* GetRegionToBeAdjusted() const { return helper_.GetRegionToBeAdjusted(); }
 
   const SuperblockCloner::HBasicBlockMap* GetBasicBlockMap() const { return &bb_map_; }

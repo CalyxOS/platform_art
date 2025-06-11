@@ -1023,6 +1023,7 @@ void ReaderWriterMutex::WakeupToRespondToEmptyCheckpoint() {
 
 ConditionVariable::ConditionVariable(const char* name, Mutex& guard)
     : name_(name), guard_(guard) {
+  DCHECK(name != nullptr);
 #if ART_USE_FUTEXES
   DCHECK_EQ(0, sequence_.load(std::memory_order_relaxed));
   num_waiters_ = 0;
@@ -1120,7 +1121,7 @@ void ConditionVariable::WaitHoldingLocks(Thread* self) {
     // EAGAIN == EWOULDBLK, so we let the caller try again.
     // EINTR implies a signal was sent to this thread.
     if ((errno != EINTR) && (errno != EAGAIN)) {
-      PLOG(FATAL) << "futex wait failed for " << name_;
+      PLOG(FATAL) << "futex wait failed for " << name_ << ": " << strerror(errno);
     }
   }
   SleepIfRuntimeDeleted(self);

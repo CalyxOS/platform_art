@@ -145,13 +145,20 @@ public final class AidlUtils {
     }
 
     @NonNull
-    public static ProfilePath buildProfilePathForPrimaryCur(
+    public static PrimaryCurProfilePath buildPrimaryCurProfilePath(
             int userId, @NonNull String packageName, @NonNull String profileName) {
         var primaryCurProfilePath = new PrimaryCurProfilePath();
         primaryCurProfilePath.userId = userId;
         primaryCurProfilePath.packageName = packageName;
         primaryCurProfilePath.profileName = profileName;
-        return ProfilePath.primaryCurProfilePath(primaryCurProfilePath);
+        return primaryCurProfilePath;
+    }
+
+    @NonNull
+    public static ProfilePath buildProfilePathForPrimaryCur(
+            int userId, @NonNull String packageName, @NonNull String profileName) {
+        return ProfilePath.primaryCurProfilePath(
+                buildPrimaryCurProfilePath(userId, packageName, profileName));
     }
 
     @NonNull
@@ -213,6 +220,26 @@ public final class AidlUtils {
         runtimeArtifactsPath.dexPath = dexPath;
         runtimeArtifactsPath.isa = isa;
         return runtimeArtifactsPath;
+    }
+
+    @NonNull
+    public static SecureDexMetadataWithCompanionPaths buildSecureDexMetadataWithCompanionPaths(
+            @NonNull String dexPath, @NonNull String isa, boolean isInDalvikCache) {
+        var paths = new SecureDexMetadataWithCompanionPaths();
+        paths.dexPath = dexPath;
+        paths.isa = isa;
+        paths.isInDalvikCache = isInDalvikCache;
+        return paths;
+    }
+
+    @NonNull
+    public static OutputSecureDexMetadataCompanion buildOutputSecureDexMetadataCompanion(
+            @NonNull String dexPath, @NonNull String isa, boolean isInDalvikCache,
+            @NonNull PermissionSettings permissionSettings) {
+        var outputSdc = new OutputSecureDexMetadataCompanion();
+        outputSdc.sdcPath = buildSecureDexMetadataWithCompanionPaths(dexPath, isa, isInDalvikCache);
+        outputSdc.permissionSettings = permissionSettings;
+        return outputSdc;
     }
 
     @NonNull
@@ -280,5 +307,12 @@ public final class AidlUtils {
                         "Only a subset of profile paths are supported to be converted to string, "
                         + "got " + profile.getTag());
         }
+    }
+
+    @NonNull
+    public static String toString(@NonNull SecureDexMetadataWithCompanionPaths paths) {
+        return String.format(
+                "SecureDexMetadataWithCompanionPaths[dexPath = %s, isa = %s, isInDalvikCache = %b]",
+                paths.dexPath, paths.isa, paths.isInDalvikCache);
     }
 }

@@ -158,7 +158,7 @@ extern uint64_t GenericJniMethodEnd(Thread* self,
   // @CriticalNative does not do a state transition. @FastNative usually does not do a state
   // transition either but it performs a suspend check that may do state transitions.
   if (LIKELY(normal_native)) {
-    if (UNLIKELY(self->ReadFlag(ThreadFlag::kMonitorJniEntryExit))) {
+    if (UNLIKELY(self->ReadFlag(ThreadFlag::kMonitorJniEntryExit, std::memory_order_relaxed))) {
       artJniMonitoredMethodEnd(self);
     } else {
       artJniMethodEnd(self);

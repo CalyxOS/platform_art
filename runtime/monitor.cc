@@ -1694,9 +1694,16 @@ size_t MonitorList::Size() {
 
 class MonitorDeflateVisitor : public IsMarkedVisitor {
  public:
-  MonitorDeflateVisitor() : self_(Thread::Current()), deflate_count_(0) {}
+  MonitorDeflateVisitor()
+      : self_(Thread::Current()), deflate_count_(0), heap_(Runtime::Current()->GetHeap()) {}
 
   mirror::Object* IsMarked(mirror::Object* object) override REQUIRES(Locks::mutator_lock_) {
+    // Avoid deflating monitors in zygote/image spaces because that could
+    // end up dirtying otherwise shared/clean memory.
+    if (heap_->IsInZygoteSpace(object) || heap_->ObjectIsInBootImageSpace(object)) {
+      return object;  // Monitor was not deflated.
+    }
+
     if (Monitor::Deflate(self_, object)) {
       DCHECK_NE(object->GetLockWord(true).GetState(), LockWord::kFatLocked);
       ++deflate_count_;
@@ -1708,6 +1715,7 @@ class MonitorDeflateVisitor : public IsMarkedVisitor {
 
   Thread* const self_;
   size_t deflate_count_;
+  gc::Heap* heap_;
 };
 
 size_t MonitorList::DeflateMonitors() {

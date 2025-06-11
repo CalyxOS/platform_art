@@ -162,7 +162,7 @@
 ## CHECK-START: int TestCase.testExitPredecessors(int, boolean, boolean) dead_code_elimination$after_inlining (after)
 ## CHECK-NOT:                    IntConstant 5
 
-## CHECK-START: int TestCase.testExitPredecessors(int, boolean, boolean) select_generator (after)
+## CHECK-START: int TestCase.testExitPredecessors(int, boolean, boolean) control_flow_simplifier (after)
 ## CHECK-DAG:     <<ArgX:i\d+>>  ParameterValue
 ## CHECK-DAG:     <<ArgY:z\d+>>  ParameterValue
 ## CHECK-DAG:     <<ArgZ:z\d+>>  ParameterValue

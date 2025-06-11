@@ -194,9 +194,15 @@ Result<void> BindMountDirect(const std::string& source, const std::string& targe
 }
 
 // Bind-mounts `source` at `target` with the mount propagation type being "slave+shared".
-Result<void> BindMount(const std::string& source, const std::string& target) {
+// By default, this function rejects `source` in chroot, to avoid accidental repeated bind-mounting.
+// If you intentionally want `source` to be in chroot, set `check_source_is_not_in_chroot` to false.
+Result<void> BindMount(const std::string& source,
+                       const std::string& target,
+                       bool check_source_is_not_in_chroot = true) {
   // Don't bind-mount repeatedly.
-  CHECK(!PathStartsWith(source, DexoptChrootSetup::CHROOT_DIR));
+  if (check_source_is_not_in_chroot) {
+    CHECK(!PathStartsWith(source, DexoptChrootSetup::CHROOT_DIR));
+  }
   // Don't follow symlinks.
   CHECK(!OR_RETURN(IsSelfOrParentSymlink(target))) << target;
   // system_server has a different mount namespace from init, and it uses slave mounts. E.g:
@@ -319,14 +325,24 @@ Result<void> BindMountRecursive(const std::string& source, const std::string& ta
       // Match paths for the "u:object_r:apk_tmp_file:s0" file context in
       // system/sepolicy/private/file_contexts.
       std::regex apk_tmp_file_re(R"re((/data|/mnt/expand/[^/]+)/app/vmdl[^/]+\.tmp(/.*)?)re");
-      std::smatch match;
-      if (std::regex_match(entry.mount_point, match, apk_tmp_file_re)) {
+      if (std::regex_match(entry.mount_point, apk_tmp_file_re)) {
         // Don't bother. The mount point is a temporary directory created by Package Manager during
         // app install. We won't be able to dexopt the app there anyway because it's not in the
         // Package Manager's snapshot.
         LOG(INFO) << ART_FORMAT("Skipped temporary mount point '{}'", entry.mount_point);
         continue;
       }
+
+      std::regex vendor_file_re(R"re(/data/vendor(/.*)?)re");
+      if (std::regex_match(entry.mount_point, vendor_file_re)) {
+        // We can't reliably bind-mount vendor-specific files because those files can have
+        // vendor-specific SELinux file contexts, which by design cannot be referenced by
+        // `dexopt_chroot_setup.te`. In practice, we don't need to bind-mount those files because
+        // they are unlikely to contain things useful to us.
+        LOG(INFO) << ART_FORMAT("Skipped vendor mount point '{}'", entry.mount_point);
+        continue;
+      }
+
       return result;
     }
   }
@@ -477,7 +493,7 @@ Result<void> PrepareExternalLibDirs() {
   // to do next.
   Result<void> result = BindMount(existing_lib_dirs[0], PathInChroot(existing_lib_dirs[0]));
   if (result.ok()) {
-    for (size_t i = 1; i < existing_lib_dirs.size(); i++) {
+    for (size_t i = 1; i < existing_lib_dirs.size(); ++i) {
       OR_RETURN(BindMount(existing_lib_dirs[i], PathInChroot(existing_lib_dirs[i])));
     }
   } else if (result.error().code() == EACCES) {
@@ -501,6 +517,36 @@ Result<void> PrepareExternalLibDirs() {
   } else {
     return result;
   }
+
+  // Back up the new classpaths dir before bind-mounting etc dirs. We need the new classpaths dir
+  // for derive_classpath.
+  std::string classpaths_tmp_dir = PathInChroot("/mnt/classpaths");
+  OR_RETURN(CreateDir(classpaths_tmp_dir));
+  OR_RETURN(BindMount(PathInChroot("/system/etc/classpaths"),
+                      classpaths_tmp_dir,
+                      /*check_source_is_not_in_chroot=*/false));
+
+  // Old platform libraries expect old etc dirs, so we should bind-mount them as well.
+  OR_RETURN(BindMount("/system/etc", PathInChroot("/system/etc")));
+  OR_RETURN(BindMount("/system_ext/etc", PathInChroot("/system_ext/etc")));
+  OR_RETURN(BindMount("/product/etc", PathInChroot("/product/etc")));
+  result = BindMount("/vendor/etc", PathInChroot("/vendor/etc"));
+  if (!result.ok()) {
+    if (result.error().code() == EACCES) {
+      // We don't have the permission to do so on V. That's fine because the V version of the
+      // platform libraries are fine with the B version of /vendor/etc at the time of writing. Even
+      // if it's not fine, there is nothing we can do.
+      LOG(WARNING) << result.error().message();
+    } else {
+      return result;
+    }
+  }
+
+  // Restore the classpaths dir.
+  OR_RETURN(BindMount(classpaths_tmp_dir,
+                      PathInChroot("/system/etc/classpaths"),
+                      /*check_source_is_not_in_chroot=*/false));
+  OR_RETURN(Unmount(classpaths_tmp_dir));
 
   return {};
 }
@@ -705,19 +751,28 @@ Result<void> DexoptChrootSetup::InitChroot() const {
 }
 
 Result<void> DexoptChrootSetup::TearDownChroot() const {
-  // For mount points in `kExternalLibDirs`, make sure we have unmounted them before running apexd,
-  // as apexd expects new libraries.
+  // For platform library dirs and etc dirs, make sure we have unmounted them before running apexd,
+  // as apexd expects new libraries (and probably new etc dirs).
   // For mount points under "/mnt/compat_env", make sure we have unmounted them before running
   // apexd, as apexd doesn't expect apexes to be in-use.
+  // The list is in mount order.
   std::vector<FstabEntry> entries = OR_RETURN(GetProcMountsDescendantsOfPath(CHROOT_DIR));
-  for (const FstabEntry entry : entries) {
+  for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
+    const FstabEntry& entry = *it;
     std::string_view mount_point_in_chroot = entry.mount_point;
     CHECK(ConsumePrefix(&mount_point_in_chroot, CHROOT_DIR));
     if (mount_point_in_chroot.empty()) {
       continue;  // The root mount.
     }
     if (ContainsElement(kExternalLibDirs, mount_point_in_chroot) ||
-        PathStartsWith(mount_point_in_chroot, "/mnt/compat_env")) {
+        PathStartsWith(mount_point_in_chroot, "/mnt/compat_env") ||
+        ContainsElement({"/system/etc",
+                         "/system_ext/etc",
+                         "/product/etc",
+                         "/vendor/etc",
+                         "/system/etc/classpaths",
+                         "/mnt/classpaths"},
+                        mount_point_in_chroot)) {
       OR_RETURN(Unmount(entry.mount_point));
     }
   }
@@ -748,7 +803,7 @@ Result<void> DexoptChrootSetup::TearDownChroot() const {
 
   // The list is in mount order.
   entries = OR_RETURN(GetProcMountsDescendantsOfPath(CHROOT_DIR));
-  for (auto it = entries.rbegin(); it != entries.rend(); it++) {
+  for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
     OR_RETURN(Unmount(it->mount_point));
   }
 

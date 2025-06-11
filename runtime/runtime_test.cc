@@ -102,8 +102,6 @@ TEST_F(RuntimeTest, ElfAlignmentMismatch) {
 
   std::string error_msg;
   std::unique_ptr<ElfFile> elf_file(ElfFile::Open(core_oat_file.get(),
-                                                  /*writable=*/false,
-                                                  /*program_header_only=*/true,
                                                   /*low_4gb=*/false,
                                                   &error_msg));
   ASSERT_TRUE(elf_file != nullptr) << error_msg;

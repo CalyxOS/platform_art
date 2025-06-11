@@ -48,6 +48,12 @@ public class Main {
         // the new timeout plus the 5 seconds we wait to dump thread stacks before actually
         // exiting.
         snooze(9800);
+        if (System.getenv("ART_TEST_ON_VM") != null) {
+          // Under emulation we sometimes seem to just not shut down fast enough.  If the process is
+          // still running at this point, sleep again for longer. This makes the test much less
+          // useful, but not 100% useless.
+          snooze(20_000);
+        }
 
         // We should not get here, since it should only take 5.5 seconds for the timed out
         // finalizer to kill the process.

@@ -564,7 +564,7 @@ public class TestMinMax {
     return x;
   }
 
-  /// CHECK-START: int TestMinMax.minmax3(int) select_generator (after)
+  /// CHECK-START: int TestMinMax.minmax3(int) control_flow_simplifier (after)
   /// CHECK-DAG: <<Par:i\d+>>  ParameterValue
   /// CHECK-DAG: <<P100:i\d+>> IntConstant 100
   /// CHECK-DAG: <<M100:i\d+>> IntConstant -100
@@ -588,7 +588,7 @@ public class TestMinMax {
     return (x > 100) ? 100 : ((x < -100) ? -100 : x);
   }
 
-  /// CHECK-START: int TestMinMax.minmax4(int) select_generator (after)
+  /// CHECK-START: int TestMinMax.minmax4(int) control_flow_simplifier (after)
   /// CHECK-DAG: <<Par:i\d+>>  ParameterValue
   /// CHECK-DAG: <<P100:i\d+>> IntConstant 100
   /// CHECK-DAG: <<M100:i\d+>> IntConstant -100
@@ -612,7 +612,7 @@ public class TestMinMax {
     return (x < -100) ? -100 : ((x > 100) ? 100 : x);
   }
 
-  /// CHECK-START: int TestMinMax.minmaxCSEScalar(int, int) select_generator (after)
+  /// CHECK-START: int TestMinMax.minmaxCSEScalar(int, int) control_flow_simplifier (after)
   /// CHECK-DAG: <<Par1:i\d+>> ParameterValue
   /// CHECK-DAG: <<Par2:i\d+>> ParameterValue
   /// CHECK-DAG: <<Cnd1:z\d+>> LessThanOrEqual    [<<Par1>>,<<Par2>>]
@@ -648,7 +648,7 @@ public class TestMinMax {
     return t1 + t2 + t3 + t4 + t5 + t6;
   }
 
-  /// CHECK-START: int TestMinMax.minmaxCSEArray(int[], int[]) select_generator (after)
+  /// CHECK-START: int TestMinMax.minmaxCSEArray(int[], int[]) control_flow_simplifier (after)
   /// CHECK-DAG: <<Arr1:i\d+>> ArrayGet
   /// CHECK-DAG: <<Arr2:i\d+>> ArrayGet
   /// CHECK-DAG: <<Cnd1:z\d+>> LessThanOrEqual    [<<Arr1>>,<<Arr2>>]

@@ -17,7 +17,7 @@
 import java.lang.ref.WeakReference;
 
 public class Main {
-    static final int numWeakReferences = 16 * 1024;
+    static final int numWeakReferences = 16 * 1024 / (isVm() ? 4 : 1);
     static WeakReference[] weakReferences = new WeakReference[numWeakReferences];
     static volatile boolean done = false;
     static Object keepAlive;
@@ -69,5 +69,9 @@ public class Main {
                 }
             }
         }
+    }
+
+    private static boolean isVm() {
+        return System.getenv("ART_TEST_ON_VM") != null;
     }
 }

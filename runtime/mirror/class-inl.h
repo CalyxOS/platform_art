@@ -29,6 +29,7 @@
 #include "class_linker.h"
 #include "class_loader.h"
 #include "common_throws.h"
+#include "dex/class_accessor-inl.h"
 #include "dex/dex_file-inl.h"
 #include "dex/invoke_type.h"
 #include "dex_cache.h"
@@ -421,7 +422,7 @@ inline bool Class::IsDiscoverable(bool public_only,
   }
 
   return !hiddenapi::ShouldDenyAccessToMember(
-      member, access_context, hiddenapi::AccessMethod::kNone);
+      member, access_context, hiddenapi::AccessMethod::kCheckWithPolicy);
 }
 
 // Determine whether "this" is assignable from "src", where both of these
@@ -643,9 +644,9 @@ inline void Class::SetIfTable(ObjPtr<IfTable> new_iftable) {
       IfTableOffset(), new_iftable);
 }
 
-inline LengthPrefixedArray<ArtField>* Class::GetIFieldsPtr() {
+inline LengthPrefixedArray<ArtField>* Class::GetFieldsPtr() {
   DCHECK(IsLoaded() || IsErroneous()) << GetStatus();
-  return GetFieldPtr<LengthPrefixedArray<ArtField>*>(OFFSET_OF_OBJECT_MEMBER(Class, ifields_));
+  return GetFieldPtr<LengthPrefixedArray<ArtField>*>(OFFSET_OF_OBJECT_MEMBER(Class, fields_));
 }
 
 template<VerifyObjectFlags kVerifyFlags, ReadBarrierOption kReadBarrierOption>
@@ -680,44 +681,21 @@ inline MemberOffset Class::GetFirstReferenceStaticFieldOffsetDuringLinking(
   return MemberOffset(base);
 }
 
-inline void Class::SetIFieldsPtr(LengthPrefixedArray<ArtField>* new_ifields) {
-  DCHECK(GetIFieldsPtrUnchecked() == nullptr);
-  return SetFieldPtr<false>(OFFSET_OF_OBJECT_MEMBER(Class, ifields_), new_ifields);
+inline void Class::SetFieldsPtr(LengthPrefixedArray<ArtField>* new_fields) {
+  DCHECK(GetFieldsPtrUnchecked() == nullptr);
+  return SetFieldPtr<false>(OFFSET_OF_OBJECT_MEMBER(Class, fields_), new_fields);
 }
 
-inline void Class::SetIFieldsPtrUnchecked(LengthPrefixedArray<ArtField>* new_ifields) {
-  SetFieldPtr<false, true, kVerifyNone>(OFFSET_OF_OBJECT_MEMBER(Class, ifields_), new_ifields);
+inline void Class::SetFieldsPtrUnchecked(LengthPrefixedArray<ArtField>* new_fields) {
+  SetFieldPtr<false, true, kVerifyNone>(OFFSET_OF_OBJECT_MEMBER(Class, fields_), new_fields);
 }
 
-inline LengthPrefixedArray<ArtField>* Class::GetSFieldsPtrUnchecked() {
-  return GetFieldPtr<LengthPrefixedArray<ArtField>*>(OFFSET_OF_OBJECT_MEMBER(Class, sfields_));
+inline LengthPrefixedArray<ArtField>* Class::GetFieldsPtrUnchecked() {
+  return GetFieldPtr<LengthPrefixedArray<ArtField>*>(OFFSET_OF_OBJECT_MEMBER(Class, fields_));
 }
 
-inline LengthPrefixedArray<ArtField>* Class::GetIFieldsPtrUnchecked() {
-  return GetFieldPtr<LengthPrefixedArray<ArtField>*>(OFFSET_OF_OBJECT_MEMBER(Class, ifields_));
-}
-
-inline LengthPrefixedArray<ArtField>* Class::GetSFieldsPtr() {
-  DCHECK(IsLoaded() || IsErroneous()) << GetStatus();
-  return GetSFieldsPtrUnchecked();
-}
-
-inline void Class::SetSFieldsPtr(LengthPrefixedArray<ArtField>* new_sfields) {
-  DCHECK((IsRetired() && new_sfields == nullptr) ||
-         GetFieldPtr<ArtField*>(OFFSET_OF_OBJECT_MEMBER(Class, sfields_)) == nullptr);
-  SetFieldPtr<false>(OFFSET_OF_OBJECT_MEMBER(Class, sfields_), new_sfields);
-}
-
-inline void Class::SetSFieldsPtrUnchecked(LengthPrefixedArray<ArtField>* new_sfields) {
-  SetFieldPtr<false, true, kVerifyNone>(OFFSET_OF_OBJECT_MEMBER(Class, sfields_), new_sfields);
-}
-
-inline ArtField* Class::GetStaticField(uint32_t i) {
-  return &GetSFieldsPtr()->At(i);
-}
-
-inline ArtField* Class::GetInstanceField(uint32_t i) {
-  return &GetIFieldsPtr()->At(i);
+inline ArtField* Class::GetField(uint32_t i) {
+  return &GetFieldsPtr()->At(i);
 }
 
 template<VerifyObjectFlags kVerifyFlags>
@@ -1020,8 +998,8 @@ inline void Class::AssertInitializedOrInitializingInThread(Thread* self) {
 
 inline ObjPtr<ObjectArray<Class>> Class::GetProxyInterfaces() {
   CHECK(IsProxyClass());
-  // First static field.
-  ArtField* field = GetStaticField(0);
+  // First field.
+  ArtField* field = GetField(0);
   DCHECK_STREQ(field->GetName(), "interfaces");
   MemberOffset field_offset = field->GetOffset();
   return GetFieldObject<ObjectArray<Class>>(field_offset);
@@ -1029,8 +1007,8 @@ inline ObjPtr<ObjectArray<Class>> Class::GetProxyInterfaces() {
 
 inline ObjPtr<ObjectArray<ObjectArray<Class>>> Class::GetProxyThrows() {
   CHECK(IsProxyClass());
-  // Second static field.
-  ArtField* field = GetStaticField(1);
+  // Second field.
+  ArtField* field = GetField(1);
   DCHECK_STREQ(field->GetName(), "throws");
   MemberOffset field_offset = field->GetOffset();
   return GetFieldObject<ObjectArray<ObjectArray<Class>>>(field_offset);
@@ -1124,20 +1102,12 @@ inline ArraySlice<ArtMethod> Class::GetMethods(PointerSize pointer_size) {
   return GetMethodsSliceRangeUnchecked(methods, pointer_size, 0u, NumMethods(methods));
 }
 
-inline IterationRange<StrideIterator<ArtField>> Class::GetIFields() {
-  return MakeIterationRangeFromLengthPrefixedArray(GetIFieldsPtr());
+inline IterationRange<StrideIterator<ArtField>> Class::GetFields() {
+  return MakeIterationRangeFromLengthPrefixedArray(GetFieldsPtr());
 }
 
-inline IterationRange<StrideIterator<ArtField>> Class::GetSFields() {
-  return MakeIterationRangeFromLengthPrefixedArray(GetSFieldsPtr());
-}
-
-inline IterationRange<StrideIterator<ArtField>> Class::GetIFieldsUnchecked() {
-  return MakeIterationRangeFromLengthPrefixedArray(GetIFieldsPtrUnchecked());
-}
-
-inline IterationRange<StrideIterator<ArtField>> Class::GetSFieldsUnchecked() {
-  return MakeIterationRangeFromLengthPrefixedArray(GetSFieldsPtrUnchecked());
+inline IterationRange<StrideIterator<ArtField>> Class::GetFieldsUnchecked() {
+  return MakeIterationRangeFromLengthPrefixedArray(GetFieldsPtrUnchecked());
 }
 
 inline void Class::CheckPointerSize(PointerSize pointer_size) {
@@ -1234,14 +1204,37 @@ inline uint32_t Class::NumVirtualMethods() {
   return NumMethods() - GetVirtualMethodsStartOffset();
 }
 
-inline uint32_t Class::NumInstanceFields() {
-  LengthPrefixedArray<ArtField>* arr = GetIFieldsPtrUnchecked();
+inline uint32_t Class::NumFields() {
+  LengthPrefixedArray<ArtField>* arr = GetFieldsPtrUnchecked();
   return arr != nullptr ? arr->size() : 0u;
 }
 
-inline uint32_t Class::NumStaticFields() {
-  LengthPrefixedArray<ArtField>* arr = GetSFieldsPtrUnchecked();
-  return arr != nullptr ? arr->size() : 0u;
+inline bool Class::HasStaticFields() {
+  if (IsArrayClass() || IsPrimitive()) {
+    return false;
+  }
+  ClassAccessor accessor(GetDexFile(), GetDexClassDefIndex());
+  return accessor.NumStaticFields() != 0u;
+}
+
+inline uint32_t Class::ComputeNumStaticFields() {
+  uint32_t num = 0;
+  for (ArtField& field : GetFields()) {
+    if (field.IsStatic()) {
+      ++num;
+    }
+  }
+  return num;
+}
+
+inline uint32_t Class::ComputeNumInstanceFields() {
+  uint32_t num = 0;
+  for (ArtField& field : GetFields()) {
+    if (!field.IsStatic()) {
+      ++num;
+    }
+  }
+  return num;
 }
 
 template <typename T, VerifyObjectFlags kVerifyFlags, typename Visitor>
@@ -1262,11 +1255,9 @@ template <VerifyObjectFlags kVerifyFlags, typename Visitor>
 inline void Class::FixupNativePointers(Class* dest,
                                        PointerSize pointer_size,
                                        const Visitor& visitor) {
-  // Update the field arrays.
+  // Update the field array.
   FixupNativePointer<LengthPrefixedArray<ArtField>*, kVerifyFlags>(
-      dest, pointer_size, visitor, OFFSET_OF_OBJECT_MEMBER(Class, sfields_));
-  FixupNativePointer<LengthPrefixedArray<ArtField>*, kVerifyFlags>(
-      dest, pointer_size, visitor, OFFSET_OF_OBJECT_MEMBER(Class, ifields_));
+      dest, pointer_size, visitor, OFFSET_OF_OBJECT_MEMBER(Class, fields_));
   // Update method array.
   FixupNativePointer<LengthPrefixedArray<ArtMethod>*, kVerifyFlags>(
       dest, pointer_size, visitor, OFFSET_OF_OBJECT_MEMBER(Class, methods_));
@@ -1345,6 +1336,16 @@ inline void Class::SetHasDefaultMethods() {
   SetAccessFlagsDuringLinking(flags | kAccHasDefaultMethod);
 }
 
+inline void Class::SetHasTypeChecksFailure() {
+  uint32_t flags = GetField32(OFFSET_OF_OBJECT_MEMBER(Class, access_flags_));
+  SetAccessFlags(flags | kAccHasTypeChecksFailure);
+}
+
+inline bool Class::HasTypeChecksFailure() {
+  uint32_t flags = GetField32(OFFSET_OF_OBJECT_MEMBER(Class, access_flags_));
+  return (flags & kAccHasTypeChecksFailure) != 0u;
+}
+
 inline void Class::ClearFinalizable() {
   // We're clearing the finalizable flag only for `Object` and `Enum`
   // during early setup without the boot image.
@@ -1360,6 +1361,38 @@ inline ImTable* Class::FindSuperImt(PointerSize pointer_size) {
     klass = klass->GetSuperClass();
     if (klass->ShouldHaveImt()) {
       return klass->GetImt(pointer_size);
+    }
+  }
+  return nullptr;
+}
+
+ALWAYS_INLINE FLATTEN inline ArtField* Class::FindDeclaredField(uint32_t dex_field_idx) {
+  size_t num_fields = NumFields();
+  if (num_fields > 0) {
+    // The field array is an ordered list of fields where there may be missing
+    // indices. For example, it could be [40, 42], but in 90% of cases cases we have
+    // [40, 41, 42]. The latter is the case we are optimizing for, where for
+    // example `dex_field_idx` is 41, and we can just substract it with the
+    // first field index (40) and directly access the array with that index (1).
+    uint32_t index = dex_field_idx - GetField(0)->GetDexFieldIndex();
+    if (index < num_fields) {
+      ArtField* field = GetField(index);
+      if (field->GetDexFieldIndex() == dex_field_idx) {
+        return field;
+      }
+    } else {
+      index = num_fields;
+    }
+    // If there is a field, it's down the array. The array is ordered by field
+    // index, so we know we can stop the search if `dex_field_idx` is greater
+    // than the current field's index.
+    for (; index > 0; --index) {
+      ArtField* field = GetField(index - 1);
+      if (field->GetDexFieldIndex() == dex_field_idx) {
+        return field;
+      } else if (field->GetDexFieldIndex() < dex_field_idx) {
+        break;
+      }
     }
   }
   return nullptr;

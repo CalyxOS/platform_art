@@ -17,21 +17,21 @@
 #ifndef ART_LIBARTBASE_BASE_DEBUGSTORE_H_
 #define ART_LIBARTBASE_BASE_DEBUGSTORE_H_
 
-#include <array>
+#include <memory>
 #include <string>
 
 #include "palette/palette.h"
 
 namespace art {
-static constexpr size_t STORE_MAX_SIZE = 1024;
+inline constexpr size_t kDebugStoreMaxSize = 4096;
 
 inline std::string DebugStoreGetString() {
-  std::array<char, STORE_MAX_SIZE> result{};
+  auto result = std::make_unique<char[]>(kDebugStoreMaxSize);
   // If PaletteDebugStoreGetString returns PALETTE_STATUS_NOT_SUPPORTED,
   // set an empty string as the result.
   result[0] = '\0';
-  PaletteDebugStoreGetString(result.data(), result.size());
-  return std::string(result.data());
+  PaletteDebugStoreGetString(result.get(), kDebugStoreMaxSize);
+  return std::string(result.get());
 }
 
 }  // namespace art

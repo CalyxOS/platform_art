@@ -51,7 +51,7 @@ void ImmuneSpaces::CreateLargestImmuneRegion() {
       space::ImageSpace* image_space = space->AsImageSpace();
       // Update the end to include the other non-heap sections.
       space_end = RoundUp(reinterpret_cast<uintptr_t>(image_space->GetImageEnd()),
-                          kElfSegmentAlignment);
+                          MemMap::GetPageSize());
       // For the app image case, GetOatFileBegin is where the oat file was mapped during image
       // creation, the actual oat file could be somewhere else.
       const OatFile* const image_oat_file = image_space->GetOatFile();

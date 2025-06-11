@@ -23,14 +23,14 @@ namespace hiddenapi {
 // List of domains supported by the hidden API access checks. Domain with a lower
 // ordinal is considered more "trusted", i.e. always allowed to access members of
 // domains with a greater ordinal. Access checks are performed when code tries to
-// access a method/field from a more trusted domain than itself.
+// access a method/field in a more trusted domain than itself.
 enum class Domain : char {
   kCorePlatform = 0,
   kPlatform,
   kApplication,
 };
 
-inline bool IsDomainMoreTrustedThan(Domain domainA, Domain domainB) {
+inline bool IsDomainAtLeastAsTrustedAs(Domain domainA, Domain domainB) {
   return static_cast<char>(domainA) <= static_cast<char>(domainB);
 }
 

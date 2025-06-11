@@ -209,23 +209,21 @@ inline void PrimitiveArray<T>::Memcpy(int32_t dst_pos,
 
   // Note for non-byte copies we can't rely on standard libc functions like memcpy(3) and memmove(3)
   // in our implementation, because they may copy byte-by-byte.
+  static_assert(sizeof(T) == sizeof(uint8_t) || sizeof(T) == sizeof(uint16_t) ||
+                sizeof(T) == sizeof(uint32_t) || sizeof(T) == sizeof(uint64_t));
   void* dst_raw = GetRawData(sizeof(T), dst_pos);
   const void* src_raw = src->GetRawData(sizeof(T), src_pos);
   if (sizeof(T) == sizeof(uint8_t)) {
     memcpy(dst_raw, src_raw, count);
-  } else if (sizeof(T) == sizeof(uint16_t)) {
-    uint16_t* d = reinterpret_cast<uint16_t*>(dst_raw);
-    const uint16_t* s = reinterpret_cast<const uint16_t*>(src_raw);
-    ArrayForwardCopy<uint16_t>(d, s, count);
   } else if (sizeof(T) == sizeof(uint32_t)) {
+    // b/392789466 Avoids copy using float registers on aarch64 for better performance.
     uint32_t* d = reinterpret_cast<uint32_t*>(dst_raw);
     const uint32_t* s = reinterpret_cast<const uint32_t*>(src_raw);
     ArrayForwardCopy<uint32_t>(d, s, count);
   } else {
-    DCHECK_EQ(sizeof(T), sizeof(uint64_t));
-    uint64_t* d = reinterpret_cast<uint64_t*>(dst_raw);
-    const uint64_t* s = reinterpret_cast<const uint64_t*>(src_raw);
-    ArrayForwardCopy<uint64_t>(d, s, count);
+    T* d = reinterpret_cast<T*>(dst_raw);
+    const T* s = reinterpret_cast<const T*>(src_raw);
+    ArrayForwardCopy<T>(d, s, count);
   }
 }
 

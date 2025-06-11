@@ -37,22 +37,18 @@ static constexpr const bool kDebugZipMapDirectly = false;
 
 using android::base::StringPrintf;
 
-uint32_t ZipEntry::GetUncompressedLength() {
-  return zip_entry_->uncompressed_length;
-}
+uint32_t ZipEntry::GetUncompressedLength() const { return zip_entry_->uncompressed_length; }
 
-uint32_t ZipEntry::GetCrc32() {
-  return zip_entry_->crc32;
-}
+uint32_t ZipEntry::GetCrc32() const { return zip_entry_->crc32; }
 
-bool ZipEntry::IsUncompressed() {
-  return zip_entry_->method == kCompressStored;
-}
+bool ZipEntry::IsUncompressed() const { return zip_entry_->method == kCompressStored; }
 
 bool ZipEntry::IsAlignedTo(size_t alignment) const {
   DCHECK(IsPowerOfTwo(alignment)) << alignment;
   return IsAlignedParam(zip_entry_->offset, static_cast<int>(alignment));
 }
+
+off_t ZipEntry::GetOffset() const { return zip_entry_->offset; }
 
 ZipEntry::~ZipEntry() {
   delete zip_entry_;
@@ -61,7 +57,7 @@ ZipEntry::~ZipEntry() {
 bool ZipEntry::ExtractToFile(File& file, std::string* error_msg) {
   const int32_t error = ExtractEntryToFile(handle_, zip_entry_, file.Fd());
   if (error != 0) {
-    *error_msg = std::string(ErrorCodeString(error));
+    *error_msg = "Failed to extract '" + entry_name_ + "': " + ErrorCodeString(error);
     return false;
   }
 
@@ -95,7 +91,7 @@ MemMap ZipEntry::ExtractToMemMap(const char* zip_filename,
 bool ZipEntry::ExtractToMemory(/*out*/uint8_t* buffer, /*out*/std::string* error_msg) {
   const int32_t error = ::ExtractToMemory(handle_, zip_entry_, buffer, GetUncompressedLength());
   if (error != 0) {
-    *error_msg = std::string(ErrorCodeString(error));
+    *error_msg = "Failed to extract '" + entry_name_ + "': " + ErrorCodeString(error);
     return false;
   }
   return true;
@@ -233,10 +229,17 @@ static void SetCloseOnExec(int fd) {
 ZipArchive* ZipArchive::Open(const char* filename, std::string* error_msg) {
   DCHECK(filename != nullptr);
 
+  // Don't call into `OpenArchive` on file absence. `OpenArchive` prints a warning even if the file
+  // absence is expected.
+  if (!OS::FileExists(filename)) {
+    *error_msg = StringPrintf("Failed to open '%s': File not found", filename);
+    return nullptr;
+  }
+
   ZipArchiveHandle handle;
   const int32_t error = OpenArchive(filename, &handle);
   if (error != 0) {
-    *error_msg = std::string(ErrorCodeString(error));
+    *error_msg = StringPrintf("Failed to open '%s': %s", filename, ErrorCodeString(error));
     CloseArchive(handle);
     return nullptr;
   }
@@ -263,7 +266,8 @@ ZipArchive* ZipArchive::OpenFromMemory(const uint8_t* data,
   ZipArchiveHandle handle;
   const int32_t error = OpenArchiveFromMemory(data, size, filename, &handle);
   if (error != 0) {
-    *error_msg = std::string(ErrorCodeString(error));
+    *error_msg =
+        StringPrintf("Failed to open '%s' from memory: %s", filename, ErrorCodeString(error));
     CloseArchive(handle);
     return nullptr;
   }
@@ -281,7 +285,7 @@ ZipArchive* ZipArchive::OpenFromFdInternal(int fd,
   ZipArchiveHandle handle;
   const int32_t error = OpenArchiveFd(fd, filename, &handle, assume_ownership);
   if (error != 0) {
-    *error_msg = std::string(ErrorCodeString(error));
+    *error_msg = StringPrintf("Failed to open '%s' from fd: %s", filename, ErrorCodeString(error));
     CloseArchive(handle);
     return nullptr;
   }
@@ -291,13 +295,27 @@ ZipArchive* ZipArchive::OpenFromFdInternal(int fd,
 }
 
 ZipEntry* ZipArchive::Find(const char* name, std::string* error_msg) const {
+  return FindImpl(name, /*allow_entry_not_found=*/false, error_msg);
+}
+
+ZipEntry* ZipArchive::FindOrNull(const char* name, std::string* error_msg) const {
+  return FindImpl(name, /*allow_entry_not_found=*/true, error_msg);
+}
+
+ZipEntry* ZipArchive::FindImpl(const char* name,
+                               bool allow_entry_not_found,
+                               std::string* error_msg) const {
   DCHECK(name != nullptr);
 
   // Resist the urge to delete the space. <: is a bigraph sequence.
   std::unique_ptr< ::ZipEntry> zip_entry(new ::ZipEntry);
   const int32_t error = FindEntry(handle_, name, zip_entry.get());
   if (error != 0) {
-    *error_msg = std::string(ErrorCodeString(error));
+    // From system/libziparchive/zip_error.cpp.
+    constexpr std::string_view kEntryNotFound = "Entry not found";
+    if (!allow_entry_not_found || ErrorCodeString(error) != kEntryNotFound) {
+      *error_msg = StringPrintf("Failed to find entry '%s': %s", name, ErrorCodeString(error));
+    }
     return nullptr;
   }
 

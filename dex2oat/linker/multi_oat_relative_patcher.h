@@ -52,7 +52,8 @@ class MultiOatRelativePatcher final {
   // It must must never point directly to a method's code to avoid relative offsets
   // with value 0 because this value is used as a missing offset indication in
   // GetOffset() and an error indication in WriteThunks(). Additionally, it must be
-  // page-aligned, so that it does not skew alignment calculations, say arm64 ADRP.
+  // relative to a page-aligned boundary, so that it does not skew alignment calculations,
+  // say arm64 ADRP.
   void StartOatFile(uint32_t adjustment);
 
   // Get relative offset. Returns 0 when the offset has not been set yet.

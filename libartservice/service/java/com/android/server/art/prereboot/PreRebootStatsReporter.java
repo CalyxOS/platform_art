@@ -16,6 +16,7 @@
 
 package com.android.server.art.prereboot;
 
+import static com.android.server.art.prereboot.PreRebootDriver.PreRebootResult;
 import static com.android.server.art.proto.PreRebootStats.JobRun;
 import static com.android.server.art.proto.PreRebootStats.JobType;
 import static com.android.server.art.proto.PreRebootStats.Status;
@@ -141,7 +142,7 @@ public class PreRebootStatsReporter {
         }
     }
 
-    public void recordJobEnded(boolean success, boolean systemRequirementCheckFailed) {
+    public void recordJobEnded(@NonNull PreRebootResult result) {
         PreRebootStats.Builder statsBuilder = load();
         if (statsBuilder.getStatus() == Status.STATUS_UNKNOWN) {
             // Failed to load, the error is already logged.
@@ -157,7 +158,7 @@ public class PreRebootStatsReporter {
                 mInjector.getCurrentTimeMillis());
 
         Status status;
-        if (success) {
+        if (result.success()) {
             // The job is cancelled if it hasn't done package scanning (total package count is 0),
             // or it's interrupted in the middle of package processing (package counts don't add up
             // to the total).
@@ -172,7 +173,7 @@ public class PreRebootStatsReporter {
                 status = Status.STATUS_CANCELLED;
             }
         } else {
-            if (systemRequirementCheckFailed) {
+            if (result.systemRequirementCheckFailed()) {
                 status = Status.STATUS_ABORTED_SYSTEM_REQUIREMENTS;
             } else {
                 status = Status.STATUS_FAILED;

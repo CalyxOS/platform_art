@@ -308,6 +308,125 @@ to prevent a single thread suspension of a thread currently between
 it will complete before it can be affected by suspension requests from other
 threads.
 
+
+Thread state transitions, flags, and memory ordering
+----------------------------------------------------
+
+Logically when a state transitions to state `kRunnable`, it acquires the mutator
+lock (in shared mode). When it changes its state back to suspended, it releases
+that lock. These must enforce proper happens-before ordering with respect to a
+thread acquiring the mutator lock in exclusive mode. Thus changing the thread
+state to suspended normally requires a release operation, to ensure visibility
+to a thread wishing to "suspend". Conversely, when we change the state back to
+`kRunnable` in `TransitionFromSuspendedToRunnable` we do so with an acquire
+compare-exchange operation to check that no suspension request remains.
+
+Any suspending thread should clear `kSuspendRequest` with a release
+operation. This, together with the acquire compare-exchange when returning to
+runnable state, ensure that suspend-count decrements happen-before a thread
+becomes runnable again.
+
+Flags are often set and tested with relaxed ordering, even when they may
+communicate a request to another thread. The reason this is safe varies.
+Generally the request is conformed by some other better synchronized
+interaction, which establishes the necessary ordering. In particular:
+
+`kCheckPointRequest`
+: See below. The call happens-before checkpoint execution since
+`checkpoint_function` accesses are guarded by a lock, as are updates to the
+flag. Checkpoint completion ordering is ensured by waiting for both
+`ThreadList::RunCheckpoint()` to complete, and for a barrier indicating
+completion in "runnable" threads.
+
+`kEmptyCheckpointRequest`
+: Currently (12/2024) in flux. See below and b/382722942 . We currently use
+acquire/release ordering to access this flag in some places to partially
+mitigate memory ordering issues here.
+
+`kActiveSuspendBarrier`
+: Changes are protected by `thread_suspend_count_lock_`, and
+`PassActiveSuspendBarriers` rechecks it while holding that lock.
+
+`kPendingFlipFunction`
+: Set while holding `thread_list_lock_`, but this lock is not consistently held
+while checking the flag, notably in `EnsureFlipFunctionStarted()`. We need
+acquire/release ordering to make sure that the requestor happens-before flip
+function execution, and the flip function is properly visible, among other
+things. We still commonly read the flag using a relaxed operation, but we
+confirm it with an acquire compare-exchange operation in
+`EnsureFlipFunctionStarted()` before actiong on it.
+
+`kRunningFlipFunction`
+: Cleared with release ordering, and read with acquire ordering by
+`WaitForFlipFunction` and its callers, thus ensuring that flip function
+execution happens-before completion of WaitForFlipFunction.
+
+`kSuspensionImmune`
+: Guarded by `thread_suspend_count_lock_`.
+
+### Checkpoint-specific considerations
+
+Checkpoints expose additional tricky issues, since they are also used to ensure
+that certain global state changes have propagated to all running Java threads.
+
+`ThreadList::RunCheckpoint()` guarantees that "if at point _X_ `RunCheckpoint()`
+has returned, and all checkpoints have been properly observed to have completed,
+then every thread has executed a code sequence _S_ during which it remained in
+a suspended state, such that the call to `RunCheckpoint` happens-before the end
+of _S_, and the beginning of _S_ happened before _X_."
+
+For each thread _T_, we attempt to atomically install the `kCheckpointRequest`
+flag while ensuring that _T_ is runnable.  If this succeeds, the fact that
+`tlsPtr_.checkpoint_function` is protected by `thread_suspend_count_lock_`, and
+`checkpoint_function` is written by the requestor, and read by _T_ at a suspend
+point, ensures that the call happens-before _S_. Normally a barrier ensures that
+_S_ happens-before _X_ .
+
+If we are unable to do so for a thread _T_ because we find it suspended, we run
+`checkpoint_function` ourselves. Before running it we set `kSuspendRequest`
+(with a release store) while _T_ is in _S_, preventing _T_ from terminating _S_
+by becoming runnable, after an acquire load of the flags. This ensures that the
+`RunCheckpoint()` call happens-before the end of _S_. Since we learned of _T_'s
+suspended state via an acquire load of its state, which it stored with a release
+store, we know that the beginning of _S_ happens-before we return from
+`RunCheckpoint()`, and hence before _X_ .
+
+The case of empty checkpoints is worth highlighting. We have traditionally
+optimized that by avoiding ever suspending the affected threads. This appears
+correct if all operations are sequentially consistent. But once memory model
+issues are considered, it appears more expensive to do fully correctly than it
+is to forego the optimization, as we explain below:
+
+We need to ensure that if Thread _A_ performs some update _U_ and then calls
+`RunEmptyCheckpoint()` then, when `RunEmptyCheckpoint()` returns, every Thread
+_B_ will have passed a suspend point at which _U_ became guaranteed visible to
+that thread. This could be ensured in different ways, depending on the observed
+state of Thread _B_:
+
+Runnable
+: Use acquire/release ordering when setting and detecting the
+`kEmptyCheckpointRequest` flag, and then use a barrier to observe when thread _B_
+has done so. In this case, Thread _B_ actually executes code at a suspend point.
+The acquire release ordering on `kEmptyCheckpointRequest` ensures that _U_
+happens-before the suspend point, and the barrier ensures that the suspend point
+happens-before the `RunEmptyCheckpoint()` return.
+
+Suspended
+: In this case, we have no mechanism for the thread to execute synchronization
+operations, and things become trickier. Thread _B_ is suspended, but it may
+restart at any time. Thread _A_ wants to conclude that Thread _B_ is already
+suspended at a suspend point, and thus it is safe to ignore Thread _B_.
+Effectively, it wants to perform the update _U_, read _B_'s state, and continue,
+while _B_ may change its state back to runnable, and then read the result of
+_U_. Both threads effectively perform a store (either _U_ or to the state of
+_B_) and then read the other value. With only acquire/release ordering, this can
+result in _A_ seeing the old suspended state, and _B_ failing to see the update
+_U_, which is an incorrect outcome.
+: The canonical fix for this kind of `store; load` reordering problem is to make
+all operations sequentially consistent. There does not appear to be an easy way
+to limit this overhead to just empty checkpoint execution. Thus it appears to be
+better to forego this "optimization".
+
 [^1]: In the most recent versions of ART, compiler-generated code loads through
     the address at `tlsPtr_.suspend_trigger`. A thread suspension is requested
     by setting this to null, triggering a `SIGSEGV`, causing that thread to

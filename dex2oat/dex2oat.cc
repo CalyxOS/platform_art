@@ -33,10 +33,6 @@
 
 #if defined(__linux__)
 #include <sched.h>
-#if defined(__arm__)
-#include <sys/personality.h>
-#include <sys/utsname.h>
-#endif  // __arm__
 #endif
 
 #include <android-base/parseint.h>
@@ -500,15 +496,6 @@ class ThreadLocalHashOverride {
   Handle<mirror::Object> old_field_value_;
 };
 
-class OatKeyValueStore : public SafeMap<std::string, std::string> {
- public:
-  using SafeMap::Put;
-
-  iterator Put(const std::string& k, bool v) {
-    return SafeMap::Put(k, v ? OatHeader::kTrueValue : OatHeader::kFalseValue);
-  }
-};
-
 class Dex2Oat final {
  public:
   explicit Dex2Oat(TimingLogger* timings)
@@ -878,6 +865,12 @@ class Dex2Oat final {
         break;
     }
 
+#ifdef ART_USE_RESTRICTED_MODE
+    // TODO(Simulator): support signal handling and implicit checks.
+    compiler_options_->implicit_suspend_checks_ = false;
+    compiler_options_->implicit_null_checks_ = false;
+#endif  // ART_USE_RESTRICTED_MODE
+
     // Done with usage checks, enable watchdog if requested
     if (parser_options->watch_dog_enabled) {
       int64_t timeout = parser_options->watch_dog_timeout_in_ms > 0
@@ -887,7 +880,7 @@ class Dex2Oat final {
     }
 
     // Fill some values into the key-value store for the oat header.
-    key_value_store_.reset(new OatKeyValueStore());
+    key_value_store_.reset(new linker::OatKeyValueStore());
 
     // Automatically force determinism for the boot image and boot image extensions in a host build.
     if (!kIsTargetBuild && (IsBootImage() || IsBootImageExtension())) {
@@ -972,7 +965,8 @@ class Dex2Oat final {
         }
         oss << argv[i];
       }
-      key_value_store_->Put(OatHeader::kDex2OatCmdLineKey, oss.str());
+      key_value_store_->PutNonDeterministic(
+          OatHeader::kDex2OatCmdLineKey, oss.str(), /*allow_truncation=*/true);
     }
     key_value_store_->Put(OatHeader::kDebuggableKey, compiler_options_->debuggable_);
     key_value_store_->Put(OatHeader::kNativeDebuggableKey,
@@ -1270,8 +1264,7 @@ class Dex2Oat final {
         if (!input_vdex_.empty()) {
           std::string error_msg;
           input_vdex_file_ = VdexFile::Open(input_vdex_,
-                                            /* writable */ false,
-                                            /* low_4gb */ false,
+                                            /*low_4gb=*/false,
                                             &error_msg);
         }
 
@@ -1321,8 +1314,7 @@ class Dex2Oat final {
           input_vdex_file_ = VdexFile::Open(input_vdex_fd_,
                                             s.st_size,
                                             "vdex",
-                                            /* writable */ false,
-                                            /* low_4gb */ false,
+                                            /*low_4gb=*/false,
                                             &error_msg);
           // If there's any problem with the passed vdex, just warn and proceed
           // without it.
@@ -1375,9 +1367,12 @@ class Dex2Oat final {
     // In theory the files should be the same.
     if (dm_file_ != nullptr) {
       if (input_vdex_file_ == nullptr) {
-        input_vdex_file_ = VdexFile::OpenFromDm(dm_file_location_, *dm_file_);
+        std::string error_msg;
+        input_vdex_file_ = VdexFile::OpenFromDm(dm_file_location_, *dm_file_, &error_msg);
         if (input_vdex_file_ != nullptr) {
           VLOG(verifier) << "Doing fast verification with vdex from DexMetadata archive";
+        } else {
+          LOG(WARNING) << error_msg;
         }
       } else {
         LOG(INFO) << "Ignoring vdex file in dex metadata due to vdex file already being passed";
@@ -1689,7 +1684,10 @@ class Dex2Oat final {
         CompilerFilter::DependsOnImageChecksum(original_compiler_filter)) {
       std::string versions =
           apex_versions_argument_.empty() ? runtime->GetApexVersions() : apex_versions_argument_;
-      key_value_store_->Put(OatHeader::kApexVersionsKey, versions);
+      if (!key_value_store_->PutNonDeterministic(OatHeader::kApexVersionsKey, versions)) {
+        LOG(ERROR) << "Cannot store apex versions string because it's too long";
+        return dex2oat::ReturnCode::kOther;
+      }
     }
 
     // Now that we have adjusted whether we generate an image, encode it in the
@@ -1989,7 +1987,6 @@ class Dex2Oat final {
                         dex_files,
                         timings_,
                         &compiler_options_->image_classes_);
-    callbacks_->SetVerificationResults(nullptr);  // Should not be needed anymore.
     driver_->CompileAll(class_loader, dex_files, timings_);
     driver_->FreeThreadPools();
     return class_loader;
@@ -2198,11 +2195,17 @@ class Dex2Oat final {
         }
 
         elf_writer->WriteDynamicSection();
-        elf_writer->WriteDebugInfo(oat_writer->GetDebugInfo());
+        {
+          TimingLogger::ScopedTiming t_wdi("Write DebugInfo", timings_);
+          elf_writer->WriteDebugInfo(oat_writer->GetDebugInfo());
+        }
 
-        if (!elf_writer->End()) {
-          LOG(ERROR) << "Failed to write ELF file " << oat_file->GetPath();
-          return false;
+        {
+          TimingLogger::ScopedTiming t_end("Write ELF End", timings_);
+          if (!elf_writer->End()) {
+            LOG(ERROR) << "Failed to write ELF file " << oat_file->GetPath();
+            return false;
+          }
         }
 
         if (!FlushOutputFile(&vdex_files_[i]) || !FlushOutputFile(&oat_files_[i])) {
@@ -2211,7 +2214,10 @@ class Dex2Oat final {
 
         VLOG(compiler) << "Oat file written successfully: " << oat_filenames_[i];
 
-        oat_writer.reset();
+        {
+          TimingLogger::ScopedTiming t_dow("Destroy OatWriter", timings_);
+          oat_writer.reset();
+        }
         // We may still need the ELF writer later for stripping.
       }
     }
@@ -2900,7 +2906,7 @@ class Dex2Oat final {
 
   std::unique_ptr<CompilerOptions> compiler_options_;
 
-  std::unique_ptr<OatKeyValueStore> key_value_store_;
+  std::unique_ptr<linker::OatKeyValueStore> key_value_store_;
 
   std::unique_ptr<VerificationResults> verification_results_;
 
@@ -3030,26 +3036,6 @@ class Dex2Oat final {
   DISALLOW_IMPLICIT_CONSTRUCTORS(Dex2Oat);
 };
 
-static void b13564922() {
-#if defined(__linux__) && defined(__arm__)
-  int major, minor;
-  struct utsname uts;
-  if (uname(&uts) != -1 &&
-      sscanf(uts.release, "%d.%d", &major, &minor) == 2 &&
-      ((major < 3) || ((major == 3) && (minor < 4)))) {
-    // Kernels before 3.4 don't handle the ASLR well and we can run out of address
-    // space (http://b/13564922). Work around the issue by inhibiting further mmap() randomization.
-    int old_personality = personality(0xffffffff);
-    if ((old_personality & ADDR_NO_RANDOMIZE) == 0) {
-      int new_personality = personality(old_personality | ADDR_NO_RANDOMIZE);
-      if (new_personality == -1) {
-        LOG(WARNING) << "personality(. | ADDR_NO_RANDOMIZE) failed.";
-      }
-    }
-  }
-#endif
-}
-
 class ScopedGlobalRef {
  public:
   explicit ScopedGlobalRef(jobject obj) : obj_(obj) {}
@@ -3113,8 +3099,6 @@ static dex2oat::ReturnCode DoCompilation(Dex2Oat& dex2oat) REQUIRES(!Locks::muta
 }
 
 static dex2oat::ReturnCode Dex2oat(int argc, char** argv) {
-  b13564922();
-
   TimingLogger timings("compiler", false, false);
 
   // Allocate `dex2oat` on the heap instead of on the stack, as Clang

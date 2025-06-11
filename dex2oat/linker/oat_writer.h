@@ -70,6 +70,29 @@ enum class CopyOption {
   kOnlyIfCompressed
 };
 
+class OatKeyValueStore {
+ public:
+  // Puts a key value pair whose key is in `OatHeader::kNonDeterministicFieldsAndLengths`.
+  bool PutNonDeterministic(const std::string& k,
+                           const std::string& v,
+                           bool allow_truncation = false);
+
+  // Puts a key value pair whose key is in `OatHeader::kDeterministicFields`.
+  void Put(const std::string& k, const std::string& v);
+
+  // Puts a key value pair whose key is in `OatHeader::kDeterministicFields`.
+  void Put(const std::string& k, bool v);
+
+  // Makes sure calls with `const char*` falls into the overload for `std::string`, not the one for
+  // `bool`.
+  void Put(const std::string& k, const char* v) { Put(k, std::string(v)); }
+
+ private:
+  SafeMap<std::string, std::string> map_;
+
+  friend class OatWriter;
+};
+
 // OatHeader         variable length with count of D OatDexFiles
 //
 // TypeLookupTable[0] one descriptor to class def index hash table for each OatDexFile.
@@ -167,7 +190,7 @@ class OatWriter {
   // Start writing .rodata, including supporting data structures for dex files.
   bool StartRoData(const std::vector<const DexFile*>& dex_files,
                    OutputStream* oat_rodata,
-                   SafeMap<std::string, std::string>* key_value_store);
+                   OatKeyValueStore* key_value_store);
   // Initialize the writer with the given parameters.
   void Initialize(const CompilerDriver* compiler_driver,
                   const VerificationResults* verification_results,
@@ -261,7 +284,6 @@ class OatWriter {
   // to actually write it.
   class DexMethodVisitor;
   class OatDexMethodVisitor;
-  class InitBssLayoutMethodVisitor;
   class InitOatClassesMethodVisitor;
   class LayoutCodeMethodVisitor;
   class LayoutReserveOffsetCodeMethodVisitor;
@@ -292,7 +314,7 @@ class OatWriter {
   void WriteVerifierDeps(verifier::VerifierDeps* verifier_deps,
                          /*out*/std::vector<uint8_t>* buffer);
 
-  size_t InitOatHeader(uint32_t num_dex_files, SafeMap<std::string, std::string>* key_value_store);
+  size_t InitOatHeader(uint32_t num_dex_files, OatKeyValueStore* key_value_store);
   size_t InitClassOffsets(size_t offset);
   size_t InitOatClasses(size_t offset);
   size_t InitOatMaps(size_t offset);
@@ -302,7 +324,11 @@ class OatWriter {
   size_t InitOatCode(size_t offset);
   size_t InitOatCodeDexFiles(size_t offset);
   size_t InitDataImgRelRoLayout(size_t offset);
+  void InitBssAndRelRoData();
   void InitBssLayout(InstructionSet instruction_set);
+  void AddBssReference(const DexFileReference& ref,
+                       size_t number_of_indexes,
+                       /*inout*/ SafeMap<const DexFile*, BitVector>* references);
 
   size_t WriteClassOffsets(OutputStream* out, size_t file_offset, size_t relative_offset);
   size_t WriteClasses(OutputStream* out, size_t file_offset, size_t relative_offset);
@@ -353,6 +379,18 @@ class OatWriter {
 
   bool VdexWillContainDexFiles() const {
     return dex_files_ != nullptr && extract_dex_files_into_vdex_;
+  }
+
+  // Return the file offset that corresponds to `offset_from_oat_data`.
+  size_t GetFileOffset(size_t offset_from_oat_data) const {
+    DCHECK_NE(oat_data_offset_, 0u);
+    return offset_from_oat_data + oat_data_offset_;
+  }
+
+  // Return the next offset (relative to the oat data) that is on or after `offset_from_oat_data`,
+  // that is aligned by `alignment` to the beginning of the file.
+  size_t GetOffsetFromOatDataAlignedToFile(size_t offset_from_oat_data, size_t alignment) const {
+    return RoundUp(GetFileOffset(offset_from_oat_data), alignment) - oat_data_offset_;
   }
 
   enum class WriteState {
@@ -505,7 +543,7 @@ class OatWriter {
   std::vector<std::unique_ptr<art::OatDexFile>> type_lookup_table_oat_dex_files_;
 
   // data to write
-  std::unique_ptr<OatHeader> oat_header_;
+  OatHeader* oat_header_;
   dchecked_vector<OatDexFile> oat_dex_files_;
   dchecked_vector<OatClassHeader> oat_class_headers_;
   dchecked_vector<OatClass> oat_classes_;

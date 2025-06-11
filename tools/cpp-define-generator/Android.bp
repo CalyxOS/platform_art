@@ -35,8 +35,12 @@ cc_object {
         "libart_headers",
         "libdexfile_all_headers", // For dex/modifiers.h
     ],
-    // Produce text file rather than binary.
-    cflags: ["-S"],
+    cflags: [
+        // Produce text file rather than binary.
+        "-S",
+        // Suppress an error about the unused -c that precedes -S.
+        "-Wno-unused-command-line-argument",
+    ],
     srcs: ["asm_defines.cc"],
     apex_available: [
         "com.android.art",

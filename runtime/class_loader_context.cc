@@ -1119,7 +1119,8 @@ bool ClassLoaderContext::CreateInfoFromClassLoader(
   } else if (IsInMemoryDexClassLoader(class_loader)) {
     type = kInMemoryDexClassLoader;
   } else {
-    LOG(WARNING) << "Unsupported class loader";
+    LOG(WARNING) << "Unsupported class loader: "
+                 << mirror::Class::PrettyClass(class_loader->GetClass());
     return false;
   }
 

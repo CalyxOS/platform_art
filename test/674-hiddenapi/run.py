@@ -1,5 +1,3 @@
-#!/bin/bash
-#
 # Copyright (C) 2019 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,6 +14,8 @@
 
 
 def run(ctx, args):
+  args.testlib += [args.testlib[0] + "_external"]
+
   # Make verification soft fail so that we can re-verify boot classpath
   # methods at runtime.
   #
@@ -24,4 +24,6 @@ def run(ctx, args):
   ctx.default_run(args, verify_soft_fail=True, secondary_compilation=False)
 
   ctx.run(fr"sed -i -E '/(JNI_OnLoad|JNI_OnUnload)/d' '{args.stdout_file}'")
-  ctx.run(fr"sed -i -E '/^dalvikvm(32|64) E [^]]+]/d' '{args.stderr_file}'")
+
+  # Ignore hiddenapi's denial errors which go to stderr on host and qemu (but not on device).
+  ctx.run(fr"sed -i -E '/ E dalvikvm.* hiddenapi: /d' '{args.stderr_file}'")

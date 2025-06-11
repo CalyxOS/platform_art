@@ -270,7 +270,7 @@ class VarHandleOptimizations : public IntrinsicOptimizations {
   INTRINSIC_OPTIMIZATION(DoNotIntrinsify, 0);  // One of the checks is statically known to fail.
   INTRINSIC_OPTIMIZATION(SkipObjectNullCheck, 1);  // Not applicable for static fields.
 
-  // Use known `VarHandle` from the boot image. To apply this optimization, the following
+  // Use known `VarHandle` from the boot/app image. To apply this optimization, the following
   // `VarHandle` checks must pass based on static analysis:
   //   - `VarHandle` type check (must match the coordinate count),
   //   - access mode check,

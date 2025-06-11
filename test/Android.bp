@@ -86,11 +86,6 @@ cc_defaults {
             relative_install_path: "art/x86_64",
         },
     },
-    // Tests aren't generally included in any APEX, but this is necessary to
-    // avoid duplicate install rules for them by making them unavailable to platform.
-    apex_available: [
-        "com.android.art.debug",
-    ],
 }
 
 // Variant of art_test_defaults for test libraries that installs them in a
@@ -368,6 +363,10 @@ art_cc_defaults {
         },
     },
     static_libs: [
+        // This dependency links the whole runtime statically into the test. Note that the boot
+        // classpath is not (normally) bundled with the test, so if the runtime is used to actually
+        // start a VM it may load the boot classpath from the device. Depending on the test
+        // configuration, that may not be in sync with the statically linked runtime.
         "libart-gtest",
     ],
     version_script: ":art-standalone-gtest-version",
@@ -535,31 +534,6 @@ java_defaults {
 
     compile_data: [
         ":test_build_symlink_targets",
-    ],
-}
-
-art_cc_test_library {
-    name: "libarttest",
-    defaults: ["libarttest-defaults"],
-    shared_libs: [
-        "libart",
-        "libdexfile#impl",
-        "libprofile",
-        "libartbase",
-    ],
-}
-
-art_cc_test_library {
-    name: "libarttestd",
-    defaults: [
-        "art_debug_defaults",
-        "libarttest-defaults",
-    ],
-    shared_libs: [
-        "libartd",
-        "libdexfiled#impl",
-        "libprofiled",
-        "libartbased",
     ],
 }
 
@@ -755,7 +729,6 @@ art_cc_defaults {
         "1959-redefine-object-instrument/fake_redef_object.cc",
         "1960-obsolete-jit-multithread-native/native_say_hi.cc",
         "1964-add-to-dex-classloader-file/add_to_loader.cc",
-        "1963-add-to-dex-classloader-in-memory/check_memfd_create.cc",
         "2012-structural-redefinition-failures-jni-id/set-jni-id-used.cc",
         "2031-zygote-compiled-frame-deopt/native-wait.cc",
         "2038-hiddenapi-jvmti-ext/hiddenapi_ext.cc",
@@ -944,7 +917,7 @@ cc_defaults {
         "692-vdex-inmem-loader/vdex_inmem_loader.cc",
         "720-thread-priority/thread_priority.cc",
         "800-smali/jni.cc",
-        "817-hiddenapi/test_native.cc",
+        "817-hiddenapi/libarttest_api.cc",
         "855-native/throws_exception.cc",
         "909-attach-agent/disallow_debugging.cc",
         "993-breakpoints-non-debuggable/native_attach_agent.cc",
@@ -974,6 +947,71 @@ cc_defaults {
         "libnativehelper",
         "libunwindstack",
     ],
+    target: {
+        android: {
+            header_libs: ["libnativeloader-headers"],
+            shared_libs: ["libdl_android"],
+        },
+    },
+}
+
+art_cc_test_library {
+    name: "libarttest",
+    defaults: ["libarttest-defaults"],
+    shared_libs: [
+        "libart",
+        "libdexfile#impl",
+        "libprofile",
+        "libartbase",
+    ],
+}
+
+art_cc_test_library {
+    name: "libarttestd",
+    defaults: [
+        "art_debug_defaults",
+        "libarttest-defaults",
+    ],
+    shared_libs: [
+        "libartd",
+        "libdexfiled#impl",
+        "libprofiled",
+        "libartbased",
+    ],
+}
+
+// "External" native code for run tests. Unlike libarttest(d), this library is
+// not installed in the com_android_art namespace, so it cannot access ART
+// internals. It's instead installed in a location that will be available as
+// java.library.path in run tests, and it can call functions in
+// libarttest(d).so.
+cc_defaults {
+    name: "libarttest_external-defaults",
+    defaults: ["art_test_defaults"],
+    srcs: [
+        "817-hiddenapi/test_native.cc",
+        "common/libarttest_external.cc",
+    ],
+    shared_libs: [
+        "libbase",
+        "liblog",
+        "libnativehelper",
+    ],
+}
+
+art_cc_test_library {
+    name: "libarttest_external",
+    defaults: ["libarttest_external-defaults"],
+    shared_libs: ["libarttest"],
+}
+
+art_cc_test_library {
+    name: "libarttestd_external",
+    defaults: [
+        "art_debug_defaults",
+        "libarttest_external-defaults",
+    ],
+    shared_libs: ["libarttestd"],
 }
 
 java_library {
@@ -1352,6 +1390,18 @@ art_cc_test {
     ],
     test_suites: ["general-tests"],
     test_config: "art-gtests-target-chroot.xml",
+}
+
+art_cc_test {
+    name: "ArtTest",
+    data: [
+        // We need the ART testing apex, which contains debug binaries and other utilities.
+        ":com.android.art.testing",
+        // Archive which contains all run-test data and test-specific bash scripts to run them.
+        ":art-test-target-fg",
+    ],
+    test_suites: ["general-tests"],
+    test_config: "ArtTest.xml",
 }
 
 csuite_test {

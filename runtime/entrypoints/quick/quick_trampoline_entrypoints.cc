@@ -23,8 +23,8 @@
 #include "base/globals.h"
 #include "base/pointer_size.h"
 #include "callee_save_frame.h"
-#include "common_throws.h"
 #include "class_root-inl.h"
+#include "common_throws.h"
 #include "debug_print.h"
 #include "debugger.h"
 #include "dex/dex_file-inl.h"
@@ -57,12 +57,13 @@
 #include "oat/oat_quick_method_header.h"
 #include "quick_exception_handler.h"
 #include "runtime.h"
+#include "runtime_entrypoints_list.h"
 #include "scoped_thread_state_change-inl.h"
 #include "stack.h"
 #include "thread-inl.h"
+#include "trace_profile.h"
 #include "var_handles.h"
 #include "well_known_classes.h"
-#include "runtime_entrypoints_list.h"
 
 namespace art HIDDEN {
 
@@ -1929,8 +1930,17 @@ class BuildGenericJniFrameVisitor final : public QuickArgumentVisitor {
                     fsc.GetStartFprRegs(reserved_area),
                     out_args_sp);
 
+    bool uses_critical_args = critical_native;
+
+#ifdef ART_USE_RESTRICTED_MODE
+    // IsCriticalNative() always returns false so check if the method is actually a critical native
+    // method. If it is then it won't need the JNI environment or jclass arguments.
+    constexpr uint32_t mask = kAccCriticalNative | kAccNative;
+    uses_critical_args = (method->GetAccessFlags() & mask) == mask;
+#endif
+
     // First 2 parameters are always excluded for CriticalNative methods.
-    if (LIKELY(!critical_native)) {
+    if (LIKELY(!uses_critical_args)) {
       // jni environment is always first argument
       sm_.AdvancePointer(self->GetJniEnv());
 
@@ -2101,7 +2111,7 @@ extern "C" const void* artQuickGenericJniTrampoline(Thread* self,
         return nullptr;  // Report error.
       }
     }
-    if (UNLIKELY(self->ReadFlag(ThreadFlag::kMonitorJniEntryExit))) {
+    if (UNLIKELY(self->ReadFlag(ThreadFlag::kMonitorJniEntryExit, std::memory_order_relaxed))) {
       artJniMonitoredMethodStart(self);
     } else {
       artJniMethodStart(self);
@@ -2793,6 +2803,11 @@ extern "C" Context* artMethodExitHook(Thread* self,
 
   // No exception or deoptimization.
   return nullptr;
+}
+
+extern "C" void artRecordLongRunningMethodTraceEvent(ArtMethod* method, Thread* self, bool is_entry)
+    REQUIRES_SHARED(Locks::mutator_lock_) {
+  TraceProfiler::FlushBufferAndRecordTraceEvent(method, self, is_entry);
 }
 
 }  // namespace art

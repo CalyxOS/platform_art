@@ -70,6 +70,11 @@ using ::android::nativeloader::LibraryNamespaces;
 // the APEX. In that case the default namespace links to the ART namespace
 // (com_android_art) for all libraries, which means this can be used to load
 // test libraries that depend on ART internal libraries.
+//
+// There's also code in art/dalvikvm.cc to add links from com_android_art back
+// to the default namespace for NATIVELOADER_DEFAULT_NAMESPACE_LIBS, enabling
+// access in the opposite direction as well. Useful e.g. to load ART plugins in
+// NATIVELOADER_DEFAULT_NAMESPACE_LIBS.
 constexpr const char* kNativeloaderExtraLibs = "nativeloader-extra-libs";
 
 std::mutex g_namespaces_mutex;

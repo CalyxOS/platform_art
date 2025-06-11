@@ -400,7 +400,8 @@ public class AhatArrayInstance extends AhatInstance {
     return String.format("%s[%d]@%08x", className, mValues.size(), getId());
   }
 
-  byte[] asByteArray() {
+  @Override
+  public byte[] asByteArray() {
     return mByteArray;
   }
 }

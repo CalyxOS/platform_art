@@ -15,6 +15,7 @@
  */
 
 import dalvik.system.PathClassLoader;
+
 import java.io.File;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
@@ -31,7 +32,7 @@ public class Main {
 
   public static void main(String[] args) throws Exception {
     System.loadLibrary(args[0]);
-    prepareNativeLibFileName(args[0]);
+    prepareNativeLibFileName(args[1]);
 
     // Enable hidden API checks in case they are disabled by default.
     init();
@@ -74,6 +75,16 @@ public class Main {
     doUnloading();
     doTest(DexDomain.CorePlatform, DexDomain.Application, true);
     doUnloading();
+
+    // The following tests use the boot class loader to load ChildClass, and
+    // that class loader uses the "system" namespace in the native linker
+    // namespace config rather than the usual "clns-XXX" namespaces created for
+    // class loaders by libnativeloader. Hence we need to add links to the libs
+    // in NATIVELOADER_DEFAULT_NAMESPACE_LIBS (in particular libarttest(d).so)
+    // to the "system" namespace, so that the tests below can load the copy of
+    // libarttest(d)_external.so (which depends on libarttest(d).so). Note that
+    // this cannot be undone.
+    addDefaultNamespaceLibsLinkToSystemLinkerNamespace();
 
     // Append child to boot class path, first as a platform dex file.
     // It should not be allowed to access non-public, non-core platform API members.
@@ -127,7 +138,7 @@ public class Main {
         addAllApisToSdk);
   }
 
-  // Routine which tries to figure out the absolute path of our native library.
+  // Routine which tries to figure out the absolute path of our native libarttest(d)_external.so.
   private static void prepareNativeLibFileName(String arg) throws Exception {
     String libName = System.mapLibraryName(arg);
     Method libPathsMethod = Runtime.class.getDeclaredMethod("getLibPaths");
@@ -179,6 +190,7 @@ public class Main {
 
   private static ClassLoader BOOT_CLASS_LOADER = Object.class.getClassLoader();
 
+  private static native void addDefaultNamespaceLibsLinkToSystemLinkerNamespace();
   private static native int appendToBootClassLoader(String dexPath, boolean isCorePlatform);
   private static native void setDexDomain(int index, boolean isCorePlatform);
   private static native void init();

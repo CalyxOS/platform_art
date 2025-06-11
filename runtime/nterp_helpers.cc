@@ -236,9 +236,6 @@ bool CanMethodUseNterp(ArtMethod* method, InstructionSet isa) {
       method->IsProxyMethod()) {
     return false;
   }
-  if (isa == InstructionSet::kRiscv64 && method->GetDexFile()->IsCompactDexFile()) {
-    return false;  // Riscv64 nterp does not support compact dex yet.
-  }
   // There is no need to add the alignment padding size for comparison with aligned limit.
   size_t frame_size_without_padding = NterpGetFrameSizeWithoutPadding(method, isa);
   DCHECK_EQ(NterpGetFrameSize(method, isa), RoundUp(frame_size_without_padding, kStackAlignment));

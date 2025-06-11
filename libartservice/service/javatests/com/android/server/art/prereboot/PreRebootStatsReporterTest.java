@@ -17,6 +17,7 @@
 package com.android.server.art.prereboot;
 
 import static com.android.server.art.model.DexoptStatus.DexContainerFileDexoptStatus;
+import static com.android.server.art.prereboot.PreRebootDriver.PreRebootResult;
 import static com.android.server.art.proto.PreRebootStats.JobRun;
 import static com.android.server.art.proto.PreRebootStats.JobType;
 import static com.android.server.art.proto.PreRebootStats.Status;
@@ -118,7 +119,7 @@ public class PreRebootStatsReporterTest {
                                .build());
 
             doReturn(300l).when(mInjector).getCurrentTimeMillis();
-            reporter.recordJobEnded(true /* success */, false /* systemRequirementCheckFailed */);
+            reporter.recordJobEnded(new PreRebootResult(true /* success */));
             checkProto(PreRebootStats.newBuilder()
                                .setStatus(Status.STATUS_CANCELLED)
                                .setJobType(JobType.JOB_TYPE_MAINLINE)
@@ -174,7 +175,7 @@ public class PreRebootStatsReporterTest {
                                .build());
 
             doReturn(600l).when(mInjector).getCurrentTimeMillis();
-            reporter.recordJobEnded(true /* success */, false /* systemRequirementCheckFailed */);
+            reporter.recordJobEnded(new PreRebootResult(true /* success */));
             checkProto(PreRebootStats.newBuilder()
                                .setStatus(Status.STATUS_FINISHED)
                                .setJobType(JobType.JOB_TYPE_MAINLINE)
@@ -290,7 +291,7 @@ public class PreRebootStatsReporterTest {
                                .build());
 
             doReturn(300l).when(mInjector).getCurrentTimeMillis();
-            reporter.recordJobEnded(true /* success */, false /* systemRequirementCheckFailed */);
+            reporter.recordJobEnded(new PreRebootResult(true /* success */));
             checkProto(PreRebootStats.newBuilder()
                                .setStatus(Status.STATUS_FINISHED)
                                .setJobType(JobType.JOB_TYPE_OTA)
@@ -350,7 +351,8 @@ public class PreRebootStatsReporterTest {
                                .build());
 
             doReturn(300l).when(mInjector).getCurrentTimeMillis();
-            reporter.recordJobEnded(false /* success */, systemRequirementCheckFailed);
+            reporter.recordJobEnded(
+                    new PreRebootResult(false /* success */, systemRequirementCheckFailed));
             checkProto(PreRebootStats.newBuilder()
                                .setStatus(systemRequirementCheckFailed
                                                ? Status.STATUS_ABORTED_SYSTEM_REQUIREMENTS

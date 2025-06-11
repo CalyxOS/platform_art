@@ -108,30 +108,9 @@ class ShadowFrame {
     return number_of_vregs_;
   }
 
-  uint32_t GetDexPC() const {
-    return (dex_pc_ptr_ == nullptr) ? dex_pc_ : dex_pc_ptr_ - dex_instructions_;
-  }
+  uint32_t GetDexPC() const { return dex_pc_; }
 
-  int16_t GetCachedHotnessCountdown() const {
-    return cached_hotness_countdown_;
-  }
-
-  void SetCachedHotnessCountdown(int16_t cached_hotness_countdown) {
-    cached_hotness_countdown_ = cached_hotness_countdown;
-  }
-
-  int16_t GetHotnessCountdown() const {
-    return hotness_countdown_;
-  }
-
-  void SetHotnessCountdown(int16_t hotness_countdown) {
-    hotness_countdown_ = hotness_countdown;
-  }
-
-  void SetDexPC(uint32_t dex_pc) {
-    dex_pc_ = dex_pc;
-    dex_pc_ptr_ = nullptr;
-  }
+  void SetDexPC(uint32_t dex_pc) { dex_pc_ = dex_pc; }
 
   ShadowFrame* GetLink() const {
     return link_;
@@ -165,10 +144,6 @@ class ShadowFrame {
   uint32_t* GetShadowRefAddr(size_t i) {
     DCHECK_LT(i, NumberOfVRegs());
     return &vregs_[i + NumberOfVRegs()];
-  }
-
-  const uint16_t* GetDexInstructions() const {
-    return dex_instructions_;
   }
 
   float GetVRegFloat(size_t i) const {
@@ -304,36 +279,12 @@ class ShadowFrame {
     return OFFSETOF_MEMBER(ShadowFrame, vregs_);
   }
 
-  static constexpr size_t DexPCPtrOffset() {
-    return OFFSETOF_MEMBER(ShadowFrame, dex_pc_ptr_);
-  }
-
-  static constexpr size_t DexInstructionsOffset() {
-    return OFFSETOF_MEMBER(ShadowFrame, dex_instructions_);
-  }
-
-  static constexpr size_t CachedHotnessCountdownOffset() {
-    return OFFSETOF_MEMBER(ShadowFrame, cached_hotness_countdown_);
-  }
-
-  static constexpr size_t HotnessCountdownOffset() {
-    return OFFSETOF_MEMBER(ShadowFrame, hotness_countdown_);
-  }
-
   // Create ShadowFrame for interpreter using provided memory.
   static ShadowFrame* CreateShadowFrameImpl(uint32_t num_vregs,
                                             ArtMethod* method,
                                             uint32_t dex_pc,
                                             void* memory) {
     return new (memory) ShadowFrame(num_vregs, method, dex_pc);
-  }
-
-  const uint16_t* GetDexPCPtr() {
-    return dex_pc_ptr_;
-  }
-
-  void SetDexPCPtr(uint16_t* dex_pc_ptr) {
-    dex_pc_ptr_ = dex_pc_ptr;
   }
 
   bool NeedsNotifyPop() const {
@@ -407,12 +358,8 @@ class ShadowFrame {
   ShadowFrame(uint32_t num_vregs, ArtMethod* method, uint32_t dex_pc)
       : link_(nullptr),
         method_(method),
-        dex_pc_ptr_(nullptr),
-        dex_instructions_(nullptr),
         number_of_vregs_(num_vregs),
         dex_pc_(dex_pc),
-        cached_hotness_countdown_(0),
-        hotness_countdown_(0),
         frame_flags_(0) {
     memset(vregs_, 0, num_vregs * (sizeof(uint32_t) + sizeof(StackReference<mirror::Object>)));
   }
@@ -442,14 +389,9 @@ class ShadowFrame {
   // Link to previous shadow frame or null.
   ShadowFrame* link_;
   ArtMethod* method_;
-  const uint16_t* dex_pc_ptr_;
-  // Dex instruction base of the code item.
-  const uint16_t* dex_instructions_;
   LockCountData lock_count_data_;  // This may contain GC roots when lock counting is active.
   const uint32_t number_of_vregs_;
   uint32_t dex_pc_;
-  int16_t cached_hotness_countdown_;
-  int16_t hotness_countdown_;
 
   // This is a set of ShadowFrame::FrameFlags which denote special states this frame is in.
   // NB alignment requires that this field takes 4 bytes no matter its size. Only 7 bits are

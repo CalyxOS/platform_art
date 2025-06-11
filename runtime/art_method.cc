@@ -200,17 +200,17 @@ void ArtMethod::ThrowInvocationTimeError(ObjPtr<mirror::Object> receiver) {
             ThrowIllegalAccessErrorForImplementingMethod(receiver->GetClass(), np_method, this);
             return;
           } else if (np_method->IsAbstract()) {
-            ThrowAbstractMethodError(this);
+            ThrowAbstractMethodError(this, receiver);
             return;
           }
         }
       }
       current = current->GetSuperClass();
     }
-    ThrowAbstractMethodError(this);
+    ThrowAbstractMethodError(this, receiver);
   } else {
     DCHECK(IsAbstract());
-    ThrowAbstractMethodError(this);
+    ThrowAbstractMethodError(this, receiver);
   }
 }
 
@@ -910,15 +910,6 @@ const char* ArtMethod::GetRuntimeMethodName() {
   } else {
     return "<unknown runtime internal method>";
   }
-}
-
-void ArtMethod::SetCodeItem(const dex::CodeItem* code_item, bool is_compact_dex_code_item) {
-  DCHECK(HasCodeItem());
-  // We mark the lowest bit for the interpreter to know whether it's executing a
-  // method in a compact or standard dex file.
-  uintptr_t data =
-      reinterpret_cast<uintptr_t>(code_item) | (is_compact_dex_code_item ? 1 : 0);
-  SetDataPtrSize(reinterpret_cast<void*>(data), kRuntimePointerSize);
 }
 
 // AssertSharedHeld doesn't work in GetAccessFlags, so use a NO_THREAD_SAFETY_ANALYSIS helper.

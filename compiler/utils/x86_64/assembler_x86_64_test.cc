@@ -1449,12 +1449,20 @@ TEST_F(AssemblerX86_64AVXTest, MovdquLoad) {
   DriverStr(RepeatFA(&x86_64::X86_64Assembler::movdqu, "vmovdqu {mem}, %{reg}"), "avx_movdqu_l");
 }
 
+TEST_F(AssemblerX86_64Test, Movq1) {
+  DriverStr(RepeatFR(&x86_64::X86_64Assembler::movq, "movq %{reg2}, %{reg1}"), "movq.1");
+}
+
+TEST_F(AssemblerX86_64Test, Movq2) {
+  DriverStr(RepeatRF(&x86_64::X86_64Assembler::movq, "movq %{reg2}, %{reg1}"), "movq.2");
+}
+
 TEST_F(AssemblerX86_64Test, Movd1) {
-  DriverStr(RepeatFR(&x86_64::X86_64Assembler::movd, "movd %{reg2}, %{reg1}"), "movd.1");
+  DriverStr(RepeatFr(&x86_64::X86_64Assembler::movd, "movd %{reg2}, %{reg1}"), "movd.1");
 }
 
 TEST_F(AssemblerX86_64Test, Movd2) {
-  DriverStr(RepeatRF(&x86_64::X86_64Assembler::movd, "movd %{reg2}, %{reg1}"), "movd.2");
+  DriverStr(RepeatrF(&x86_64::X86_64Assembler::movd, "movd %{reg2}, %{reg1}"), "movd.2");
 }
 
 TEST_F(AssemblerX86_64Test, Addss) {
@@ -2085,59 +2093,35 @@ TEST_F(AssemblerX86_64Test, Punpckhqdq) {
 }
 
 TEST_F(AssemblerX86_64Test, Psllw) {
-  GetAssembler()->psllw(x86_64::XmmRegister(x86_64::XMM0),  x86_64::Immediate(1));
-  GetAssembler()->psllw(x86_64::XmmRegister(x86_64::XMM15), x86_64::Immediate(2));
-  DriverStr("psllw $1, %xmm0\n"
-            "psllw $2, %xmm15\n", "psllwi");
+  DriverStr(RepeatFI(&x86_64::X86_64Assembler::psllw, 4u, "psllw ${imm}, %{reg}"), "psllwi");
 }
 
 TEST_F(AssemblerX86_64Test, Pslld) {
-  GetAssembler()->pslld(x86_64::XmmRegister(x86_64::XMM0),  x86_64::Immediate(1));
-  GetAssembler()->pslld(x86_64::XmmRegister(x86_64::XMM15), x86_64::Immediate(2));
-  DriverStr("pslld $1, %xmm0\n"
-            "pslld $2, %xmm15\n", "pslldi");
+  DriverStr(RepeatFI(&x86_64::X86_64Assembler::pslld, 5u, "pslld ${imm}, %{reg}"), "pslldi");
 }
 
 TEST_F(AssemblerX86_64Test, Psllq) {
-  GetAssembler()->psllq(x86_64::XmmRegister(x86_64::XMM0),  x86_64::Immediate(1));
-  GetAssembler()->psllq(x86_64::XmmRegister(x86_64::XMM15), x86_64::Immediate(2));
-  DriverStr("psllq $1, %xmm0\n"
-            "psllq $2, %xmm15\n", "psllqi");
+  DriverStr(RepeatFI(&x86_64::X86_64Assembler::psllq, 6u, "psllq ${imm}, %{reg}"), "psllqi");
 }
 
 TEST_F(AssemblerX86_64Test, Psraw) {
-  GetAssembler()->psraw(x86_64::XmmRegister(x86_64::XMM0),  x86_64::Immediate(1));
-  GetAssembler()->psraw(x86_64::XmmRegister(x86_64::XMM15), x86_64::Immediate(2));
-  DriverStr("psraw $1, %xmm0\n"
-            "psraw $2, %xmm15\n", "psrawi");
+  DriverStr(RepeatFI(&x86_64::X86_64Assembler::psraw, 4u, "psraw ${imm}, %{reg}"), "psrawi");
 }
 
 TEST_F(AssemblerX86_64Test, Psrad) {
-  GetAssembler()->psrad(x86_64::XmmRegister(x86_64::XMM0),  x86_64::Immediate(1));
-  GetAssembler()->psrad(x86_64::XmmRegister(x86_64::XMM15), x86_64::Immediate(2));
-  DriverStr("psrad $1, %xmm0\n"
-            "psrad $2, %xmm15\n", "psradi");
+  DriverStr(RepeatFI(&x86_64::X86_64Assembler::psrad, 5u, "psrad ${imm}, %{reg}"), "psradi");
 }
 
 TEST_F(AssemblerX86_64Test, Psrlw) {
-  GetAssembler()->psrlw(x86_64::XmmRegister(x86_64::XMM0),  x86_64::Immediate(1));
-  GetAssembler()->psrlw(x86_64::XmmRegister(x86_64::XMM15), x86_64::Immediate(2));
-  DriverStr("psrlw $1, %xmm0\n"
-            "psrlw $2, %xmm15\n", "psrlwi");
+  DriverStr(RepeatFI(&x86_64::X86_64Assembler::psrlw, 4u, "psrlw ${imm}, %{reg}"), "psrlwi");
 }
 
 TEST_F(AssemblerX86_64Test, Psrld) {
-  GetAssembler()->psrld(x86_64::XmmRegister(x86_64::XMM0),  x86_64::Immediate(1));
-  GetAssembler()->psrld(x86_64::XmmRegister(x86_64::XMM15), x86_64::Immediate(2));
-  DriverStr("psrld $1, %xmm0\n"
-            "psrld $2, %xmm15\n", "psrldi");
+  DriverStr(RepeatFI(&x86_64::X86_64Assembler::psrld, 5u, "psrld ${imm}, %{reg}"), "psrldi");
 }
 
 TEST_F(AssemblerX86_64Test, Psrlq) {
-  GetAssembler()->psrlq(x86_64::XmmRegister(x86_64::XMM0),  x86_64::Immediate(1));
-  GetAssembler()->psrlq(x86_64::XmmRegister(x86_64::XMM15), x86_64::Immediate(2));
-  DriverStr("psrlq $1, %xmm0\n"
-            "psrlq $2, %xmm15\n", "psrlqi");
+  DriverStr(RepeatFI(&x86_64::X86_64Assembler::psrlq, 6u, "psrlq ${imm}, %{reg}"), "psrlqi");
 }
 
 TEST_F(AssemblerX86_64Test, Psrldq) {

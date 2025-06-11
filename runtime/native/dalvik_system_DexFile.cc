@@ -487,7 +487,7 @@ static jclass DexFile_defineClassNative(JNIEnv* env,
     VLOG(class_linker) << "Failed to find class_name";
     return nullptr;
   }
-  const std::string descriptor(DotToDescriptor(class_name.c_str()));
+  const std::string descriptor = DotToDescriptor(class_name);
   const size_t hash = ComputeModifiedUtf8Hash(descriptor);
   for (auto& dex_file : dex_files) {
     const dex::ClassDef* dex_class_def = OatDexFile::FindClassDef(*dex_file, descriptor, hash);
@@ -626,38 +626,6 @@ static jint GetDexOptNeeded(JNIEnv* env,
   return oat_file_assistant.GetDexOptNeeded(filter,
                                             profile_changed,
                                             downgrade);
-}
-
-static jstring DexFile_getDexFileStatus(JNIEnv* env,
-                                        jclass,
-                                        jstring javaFilename,
-                                        jstring javaInstructionSet) {
-  ScopedUtfChars filename(env, javaFilename);
-  if (env->ExceptionCheck()) {
-    return nullptr;
-  }
-
-  ScopedUtfChars instruction_set(env, javaInstructionSet);
-  if (env->ExceptionCheck()) {
-    return nullptr;
-  }
-
-  const InstructionSet target_instruction_set = GetInstructionSetFromString(
-      instruction_set.c_str());
-  if (target_instruction_set == InstructionSet::kNone) {
-    ScopedLocalRef<jclass> iae(env, env->FindClass("java/lang/IllegalArgumentException"));
-    std::string message(StringPrintf("Instruction set %s is invalid.", instruction_set.c_str()));
-    env->ThrowNew(iae.get(), message.c_str());
-    return nullptr;
-  }
-
-  // The API doesn't support passing a class loader context, so skip the class loader context check
-  // and assume that it's OK.
-  OatFileAssistant oat_file_assistant(filename.c_str(),
-                                      target_instruction_set,
-                                      /* context= */ nullptr,
-                                      /* load_executable= */ false);
-  return env->NewStringUTF(oat_file_assistant.GetStatusDump().c_str());
 }
 
 // Return an array specifying the optimization status of the given file.
@@ -915,8 +883,7 @@ static jobjectArray DexFile_getDexFileOutputPaths(JNIEnv* env,
       for (const OatDexFile* oat_dex_file : oat_dex_files) {
         if (DexFileLoader::GetBaseLocation(oat_dex_file->GetDexFileLocation()) ==
                 filename.c_str()) {
-          oat_filename = GetSystemImageFilename(oat_file->GetLocation().c_str(),
-                                                target_instruction_set);
+          oat_filename = oat_file->GetLocation();
           is_vdex_only = oat_file->IsBackedByVdexOnly();
           break;
         }
@@ -1039,8 +1006,6 @@ static JNINativeMethod gMethods[] = {
         DexFile, getNonProfileGuidedCompilerFilter, "(Ljava/lang/String;)Ljava/lang/String;"),
     NATIVE_METHOD(DexFile, getSafeModeCompilerFilter, "(Ljava/lang/String;)Ljava/lang/String;"),
     NATIVE_METHOD(DexFile, isBackedByOatFile, "(Ljava/lang/Object;)Z"),
-    NATIVE_METHOD(
-        DexFile, getDexFileStatus, "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"),
     NATIVE_METHOD(DexFile,
                   getDexFileOutputPaths,
                   "(Ljava/lang/String;Ljava/lang/String;)[Ljava/lang/String;"),

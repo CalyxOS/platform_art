@@ -14,10 +14,12 @@
  * limitations under the License.
  */
 
+#include <dlfcn.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
 #include <algorithm>
 #include <memory>
 
@@ -27,7 +29,41 @@
 #include "nativehelper/ScopedLocalRef.h"
 #include "nativehelper/toStringArray.h"
 
+#ifdef ART_TARGET_ANDROID
+#include "nativeloader/dlext_namespaces.h"
+#endif
+
 namespace art {
+
+// This complements the treatment of NATIVELOADER_DEFAULT_NAMESPACE_LIBS in
+// art/libnativeloader/native_loader.cpp: The libraries listed in that variable
+// are added to the default namespace, which for dalvikvm runs means they can
+// access all internal libs in com_android_art. However, to allow the opposite
+// direction we need links for them from com_android_art back to default, and
+// that's done here. See comments in native_loader.cpp for full discussion.
+static bool initNativeloaderExtraLibsLinks() {
+#ifdef ART_TARGET_ANDROID
+  const char* links = getenv("NATIVELOADER_DEFAULT_NAMESPACE_LIBS");
+  if (links == nullptr || *links == 0) {
+    return true;
+  }
+  struct android_namespace_t* art_ns = android_get_exported_namespace("com_android_art");
+  if (art_ns == nullptr) {
+    fprintf(stderr,
+            "Warning: com_android_art namespace not found - "
+            "NATIVELOADER_DEFAULT_NAMESPACE_LIBS ignored\n");
+    return true;
+  }
+  if (!android_link_namespaces(art_ns, nullptr, links)) {
+    fprintf(stderr,
+            "Error adding linker namespace links from com_android_art to default for %s: %s",
+            links,
+            dlerror());
+    return false;
+  }
+#endif  // ART_TARGET_ANDROID
+  return true;
+}
 
 // Determine whether or not the specified method is public.
 static bool IsMethodPublic(JNIEnv* env, jclass c, jmethodID method_id) {
@@ -146,6 +182,10 @@ static int dalvikvm(int argc, char** argv) {
       need_extra = true;
       what = argv[arg_idx];
     }
+  }
+
+  if (!initNativeloaderExtraLibsLinks()) {
+    return EXIT_FAILURE;
   }
 
   if (need_extra) {

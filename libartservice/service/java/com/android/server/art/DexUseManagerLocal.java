@@ -215,7 +215,7 @@ public class DexUseManagerLocal {
                                         .stream()
                                         .map(loader -> loader.loadingPackageName())
                                         .collect(Collectors.toSet())))
-                .collect(Collectors.toList());
+                .toList();
     }
 
     /**
@@ -362,7 +362,7 @@ public class DexUseManagerLocal {
                                         -> !clc.equals(
                                                 SecondaryDexInfo.UNSUPPORTED_CLASS_LOADER_CONTEXT))
                                 .distinct()
-                                .collect(Collectors.toList());
+                                .toList();
                 String clc;
                 if (distinctClcList.size() == 0) {
                     clc = SecondaryDexInfo.UNSUPPORTED_CLASS_LOADER_CONTEXT;
@@ -421,7 +421,7 @@ public class DexUseManagerLocal {
 
         // TODO(jiakaiz): Investigate whether it should also be considered as isolated process if
         // `Process.isSdkSandboxUid` returns true.
-        boolean isolatedProcess = Process.isIsolatedUid(mInjector.getCallingUid());
+        boolean isolatedProcess = mInjector.isIsolatedUid(mInjector.getCallingUid());
         long lastUsedAtMs = mInjector.getCurrentTimeMillis();
 
         for (var entry : classLoaderContextByDexContainerFile.entrySet()) {
@@ -1428,6 +1428,10 @@ public class DexUseManagerLocal {
 
         public int getCallingUid() {
             return Binder.getCallingUid();
+        }
+
+        public boolean isIsolatedUid(int uid) {
+            return Process.isIsolatedUid(uid);
         }
 
         public int getMaxSecondaryDexFilesPerOwner() {

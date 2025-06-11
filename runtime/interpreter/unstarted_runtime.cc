@@ -139,7 +139,7 @@ static void UnstartedRuntimeFindClass(Thread* self,
                                       bool initialize_class)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   CHECK(className != nullptr);
-  std::string descriptor(DotToDescriptor(className->ToModifiedUtf8().c_str()));
+  std::string descriptor = DotToDescriptor(className->ToModifiedUtf8());
   ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
 
   ObjPtr<mirror::Class> found =
@@ -356,18 +356,10 @@ void UnstartedRuntime::UnstartedClassGetDeclaredField(
   ObjPtr<mirror::Class> klass = shadow_frame->GetVRegReference(arg_offset)->AsClass();
   ObjPtr<mirror::String> name2 = shadow_frame->GetVRegReference(arg_offset + 1)->AsString();
   ArtField* found = nullptr;
-  for (ArtField& field : klass->GetIFields()) {
+  for (ArtField& field : klass->GetFields()) {
     if (name2->Equals(field.GetName())) {
       found = &field;
       break;
-    }
-  }
-  if (found == nullptr) {
-    for (ArtField& field : klass->GetSFields()) {
-      if (name2->Equals(field.GetName())) {
-        found = &field;
-        break;
-      }
     }
   }
   if (found != nullptr && ShouldDenyAccessToMember(found, shadow_frame)) {

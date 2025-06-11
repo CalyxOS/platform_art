@@ -43,6 +43,7 @@
 #include "code_sinking.h"
 #include "constant_folding.h"
 #include "constructor_fence_redundancy_elimination.h"
+#include "control_flow_simplifier.h"
 #include "dead_code_elimination.h"
 #include "dex/code_item_accessors-inl.h"
 #include "driver/compiler_options.h"
@@ -57,7 +58,6 @@
 #include "loop_optimization.h"
 #include "reference_type_propagation.h"
 #include "scheduler.h"
-#include "select_generator.h"
 #include "sharpening.h"
 #include "side_effects_analysis.h"
 #include "write_barrier_elimination.h"
@@ -88,8 +88,8 @@ const char* OptimizationPassName(OptimizationPass pass) {
       return HDeadCodeElimination::kDeadCodeEliminationPassName;
     case OptimizationPass::kInliner:
       return HInliner::kInlinerPassName;
-    case OptimizationPass::kSelectGenerator:
-      return HSelectGenerator::kSelectGeneratorPassName;
+    case OptimizationPass::kControlFlowSimplifier:
+      return HControlFlowSimplifier::kControlFlowSimplifierPassName;
     case OptimizationPass::kAggressiveInstructionSimplifier:
     case OptimizationPass::kInstructionSimplifier:
       return InstructionSimplifier::kInstructionSimplifierPassName;
@@ -149,6 +149,7 @@ OptimizationPass OptimizationPassByName(const std::string& pass_name) {
   X(OptimizationPass::kCodeSinking);
   X(OptimizationPass::kConstantFolding);
   X(OptimizationPass::kConstructorFenceRedundancyElimination);
+  X(OptimizationPass::kControlFlowSimplifier);
   X(OptimizationPass::kDeadCodeElimination);
   X(OptimizationPass::kGlobalValueNumbering);
   X(OptimizationPass::kInductionVarAnalysis);
@@ -159,7 +160,6 @@ OptimizationPass OptimizationPassByName(const std::string& pass_name) {
   X(OptimizationPass::kLoopOptimization);
   X(OptimizationPass::kReferenceTypePropagation);
   X(OptimizationPass::kScheduling);
-  X(OptimizationPass::kSelectGenerator);
   X(OptimizationPass::kSideEffectsAnalysis);
 #ifdef ART_ENABLE_CODEGEN_arm
   X(OptimizationPass::kInstructionSimplifierArm);
@@ -266,8 +266,8 @@ ArenaVector<HOptimization*> ConstructOptimizations(
                                        pass_name);
         break;
       }
-      case OptimizationPass::kSelectGenerator:
-        opt = new (allocator) HSelectGenerator(graph, stats, pass_name);
+      case OptimizationPass::kControlFlowSimplifier:
+        opt = new (allocator) HControlFlowSimplifier(graph, stats, pass_name);
         break;
       case OptimizationPass::kInstructionSimplifier:
         opt = new (allocator) InstructionSimplifier(graph, codegen, stats, pass_name);

@@ -84,7 +84,7 @@ static jclass VMClassLoader_findLoadedClass(JNIEnv* env, jclass, jobject javaLoa
   ClassLinker* cl = Runtime::Current()->GetClassLinker();
 
   // Compute hash once.
-  std::string descriptor(DotToDescriptor(name.c_str()));
+  std::string descriptor = DotToDescriptor(name);
   const size_t descriptor_hash = ComputeModifiedUtf8Hash(descriptor);
 
   ObjPtr<mirror::Class> c = VMClassLoader::LookupClass(cl,

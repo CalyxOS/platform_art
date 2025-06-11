@@ -40,7 +40,7 @@
 ##  CHECK-DAG:     <<IToS:b\d+>>          TypeConversion [<<Phi>>]
 ##  CHECK-DAG:                            Return [<<IToS>>]
 
-##  CHECK-START: byte SmaliTests.booleanToByte(boolean) select_generator (after)
+##  CHECK-START: byte SmaliTests.booleanToByte(boolean) control_flow_simplifier (after)
 ##  CHECK:         <<Arg:z\d+>>           ParameterValue
 ##  CHECK-DAG:     <<Zero:i\d+>>          IntConstant 0
 ##  CHECK-DAG:     <<One:i\d+>>           IntConstant 1
@@ -75,7 +75,7 @@
 ##  CHECK-DAG:     <<IToS:s\d+>>          TypeConversion [<<Phi>>]
 ##  CHECK-DAG:                            Return [<<IToS>>]
 
-##  CHECK-START: short SmaliTests.booleanToShort(boolean) select_generator (after)
+##  CHECK-START: short SmaliTests.booleanToShort(boolean) control_flow_simplifier (after)
 ##  CHECK:         <<Arg:z\d+>>           ParameterValue
 ##  CHECK-DAG:     <<Zero:i\d+>>          IntConstant 0
 ##  CHECK-DAG:     <<One:i\d+>>           IntConstant 1
@@ -110,7 +110,7 @@
 ##  CHECK-DAG:     <<IToC:c\d+>>          TypeConversion [<<Phi>>]
 ##  CHECK-DAG:                            Return [<<IToC>>]
 
-##  CHECK-START: char SmaliTests.booleanToChar(boolean) select_generator (after)
+##  CHECK-START: char SmaliTests.booleanToChar(boolean) control_flow_simplifier (after)
 ##  CHECK:         <<Arg:z\d+>>           ParameterValue
 ##  CHECK-DAG:     <<Zero:i\d+>>          IntConstant 0
 ##  CHECK-DAG:     <<One:i\d+>>           IntConstant 1
@@ -144,7 +144,7 @@
 ##  CHECK-DAG:     <<Phi:i\d+>>           Phi [<<One>>,<<Zero>>]
 ##  CHECK-DAG:                            Return [<<Phi>>]
 
-##  CHECK-START: int SmaliTests.booleanToInt(boolean) select_generator (after)
+##  CHECK-START: int SmaliTests.booleanToInt(boolean) control_flow_simplifier (after)
 ##  CHECK:         <<Arg:z\d+>>           ParameterValue
 ##  CHECK-DAG:     <<Zero:i\d+>>          IntConstant 0
 ##  CHECK-DAG:     <<One:i\d+>>           IntConstant 1
@@ -177,7 +177,7 @@
 ## CHECK-DAG:     <<IToJ:j\d+>>          TypeConversion [<<Phi>>]
 ## CHECK-DAG:                            Return [<<IToJ>>]
 
-## CHECK-START: long SmaliTests.booleanToLong(boolean) select_generator (after)
+## CHECK-START: long SmaliTests.booleanToLong(boolean) control_flow_simplifier (after)
 ## CHECK-DAG:     <<Arg:z\d+>>           ParameterValue
 ## CHECK-DAG:     <<Zero:i\d+>>          IntConstant 0
 ## CHECK-DAG:     <<One:i\d+>>           IntConstant 1
@@ -227,7 +227,7 @@
 ## CHECK-DAG:     <<JToI:i\d+>>          TypeConversion [<<IToJ>>]
 ## CHECK-DAG:                            Return [<<JToI>>]
 
-## CHECK-START: int SmaliTests.longToIntOfBoolean() select_generator (after)
+## CHECK-START: int SmaliTests.longToIntOfBoolean() control_flow_simplifier (after)
 ## CHECK-DAG:     <<Zero:i\d+>>          IntConstant 0
 ## CHECK-DAG:     <<One:i\d+>>           IntConstant 1
 ## CHECK-DAG:     <<Sget:z\d+>>          StaticFieldGet

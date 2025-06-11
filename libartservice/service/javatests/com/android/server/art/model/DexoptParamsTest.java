@@ -29,7 +29,6 @@ import org.junit.runner.RunWith;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.Arrays;
-import java.util.stream.Collectors;
 
 @SmallTest
 @RunWith(AndroidJUnit4.class)
@@ -182,7 +181,7 @@ public class DexoptParamsTest {
         assertThat(Arrays.stream(DexoptParams.class.getDeclaredFields())
                            .filter(field -> !Modifier.isStatic(field.getModifiers()))
                            .map(Field::getName)
-                           .collect(Collectors.toList()))
+                           .toList())
                 .containsExactly(
                         "mFlags", "mCompilerFilter", "mPriorityClass", "mReason", "mSplitName");
     }

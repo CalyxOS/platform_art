@@ -31,6 +31,7 @@ class DisassemblerArm final : public Disassembler {
 
  public:
   explicit DisassemblerArm(DisassemblerOptions* options);
+  ~DisassemblerArm();
 
   size_t Dump(std::ostream& os, const uint8_t* begin) override;
   void Dump(std::ostream& os, const uint8_t* begin, const uint8_t* end) override;

@@ -100,6 +100,8 @@ void* NativeBridgeGetTrampolineForFunctionPointer(const void* method,
                                                   uint32_t len,
                                                   enum JNICallType jni_call_type);
 
+bool NativeBridgeIsNativeBridgeFunctionPointer(const void* method);
+
 // True if native library paths are valid and is for an ABI that is supported by native bridge.
 // The *libpath* must point to a library.
 //
@@ -403,9 +405,10 @@ struct NativeBridgeCallbacks {
   // Get a native bridge trampoline for specified native method implementation pointer.
   //
   // Parameters:
-  //   method [IN] pointer to method implementation (ususally registered via call to
+  //   method [IN] pointer to method implementation (usually registered via call to
   //   RegisterNatives).
-  //   shorty [IN] short descriptor of native method len [IN] length of shorty
+  //   shorty [IN] short descriptor of native method
+  //   len [IN] length of shorty
   //   jni_call_type [IN] the type of JNI call
   // Returns:
   //   address of trampoline if successful, otherwise NULL
@@ -413,6 +416,18 @@ struct NativeBridgeCallbacks {
                                            const char* shorty,
                                            uint32_t len,
                                            enum JNICallType jni_call_type);
+
+  // Check if the method pointer belongs to native_bridge address space.
+  //
+  // Parameters:
+  //   method [IN] pointer to a method implementation.
+  //
+  // Returns:
+  //   true if the method is in native bridge implementation executable address
+  //   space or in other words needs a trampoline to be able to run with native bridge.
+  //
+  // Introduced in: version 8
+  bool (*isNativeBridgeFunctionPointer)(const void* method);
 };
 
 // Runtime interfaces to native bridge.

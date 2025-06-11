@@ -315,8 +315,11 @@ class DexFileVerifier {
   bool CheckIntraMethodHandleItem();
   bool CheckIntraTypeList();
   // Check all fields of the given type, reading `encoded_field` entries from `ptr_`.
+  // Check instance fields against duplicates with static fields.
   template <bool kStatic>
-  bool CheckIntraClassDataItemFields(size_t count);
+  bool CheckIntraClassDataItemFields(size_t num_fields,
+                                     ClassAccessor::Field* static_fields,
+                                     size_t num_static_fields);
   // Check direct or virtual methods, reading `encoded_method` entries from `ptr_`.
   // Check virtual methods against duplicates with direct methods.
   bool CheckIntraClassDataItemMethods(size_t num_methods,
@@ -778,6 +781,29 @@ bool DexFileVerifier::CheckMap() {
                           static_cast<size_t>(item_type));
         return false;
       }
+
+      size_t alignment;
+      switch (item_type) {
+        case DexFile::kDexTypeClassDataItem:
+        case DexFile::kDexTypeStringDataItem:
+        case DexFile::kDexTypeDebugInfoItem:
+        case DexFile::kDexTypeAnnotationItem:
+        case DexFile::kDexTypeEncodedArrayItem:
+          alignment = sizeof(uint8_t);
+          break;
+        default:
+          alignment = sizeof(uint32_t);
+          break;
+      }
+
+      if (!IsAlignedParam(item->offset_, alignment)) {
+        ErrorStringPrintf("Offset(%d) should be aligned by %zu for maplist item of type %hu.",
+                          item->offset_,
+                          alignment,
+                          item->type_);
+        return false;
+      }
+
       data_items_left -= icount;
       data_item_count += icount;
     }
@@ -1522,14 +1548,23 @@ bool DexFileVerifier::CheckIntraTypeList() {
 }
 
 template <bool kStatic>
-bool DexFileVerifier::CheckIntraClassDataItemFields(size_t count) {
+bool DexFileVerifier::CheckIntraClassDataItemFields(size_t num_fields,
+                                                    ClassAccessor::Field* static_fields,
+                                                    size_t num_static_fields) {
   constexpr const char* kTypeDescr = kStatic ? "static field" : "instance field";
 
   // We cannot use ClassAccessor::Field yet as it could read beyond the end of the data section.
   const uint8_t* ptr = ptr_;
 
+  // Load the first static field for the check below.
+  size_t remaining_static_fields = num_static_fields;
+  if (remaining_static_fields != 0u) {
+    DCHECK(static_fields != nullptr);
+    static_fields->Read();
+  }
+
   uint32_t prev_index = 0;
-  for (size_t i = 0; i != count; ++i) {
+  for (size_t i = 0; i != num_fields; ++i) {
     uint32_t field_idx_diff, access_flags;
     if (UNLIKELY(!DecodeUnsignedLeb128Checked(&ptr, data_.end(), &field_idx_diff)) ||
         UNLIKELY(!DecodeUnsignedLeb128Checked(&ptr, data_.end(), &access_flags))) {
@@ -1549,6 +1584,29 @@ bool DexFileVerifier::CheckIntraClassDataItemFields(size_t count) {
     if (UNLIKELY(is_static != kStatic)) {
       ErrorStringPrintf("Static/instance field not in expected list");
       return false;
+    }
+
+    // For instance fields, we cross reference the field index to make sure
+    // it doesn't match any static fields.
+    if (remaining_static_fields != 0) {
+      // The static fields are already known to be in ascending index order.
+      // So just keep up with the current index.
+      while (true) {
+        const uint32_t static_idx = static_fields->GetIndex();
+        if (static_idx > curr_index) {
+          break;
+        }
+        if (static_idx == curr_index) {
+          ErrorStringPrintf("Found instance field with same index as static field: %u",
+                            curr_index);
+          return false;
+        }
+        --remaining_static_fields;
+        if (remaining_static_fields == 0u) {
+          break;
+        }
+        static_fields->Read();
+      }
     }
 
     prev_index = curr_index;
@@ -1636,10 +1694,17 @@ bool DexFileVerifier::CheckIntraClassDataItem() {
   ptr_ = ptr;
 
   // Check fields.
-  if (!CheckIntraClassDataItemFields</*kStatic=*/ true>(static_fields_size)) {
+  const uint8_t* static_fields_ptr = ptr_;
+  if (!CheckIntraClassDataItemFields</*kStatic=*/ true>(static_fields_size,
+                                                        /*static_fields=*/ nullptr,
+                                                        /*num_static_fields=*/ 0u)) {
     return false;
   }
-  if (!CheckIntraClassDataItemFields</*kStatic=*/ false>(instance_fields_size)) {
+  // Static fields have been checked, so we can now use ClassAccessor::Field to read them again.
+  ClassAccessor::Field static_fields(*dex_file_, static_fields_ptr);
+  if (!CheckIntraClassDataItemFields</*kStatic=*/ false>(instance_fields_size,
+                                                         &static_fields,
+                                                         static_fields_size)) {
     return false;
   }
 
@@ -2618,7 +2683,7 @@ bool DexFileVerifier::CheckInterHiddenapiClassData() {
         failure = true;
         return;
       }
-      if (!hiddenapi::ApiList(decoded_flags).IsValid()) {
+      if (!hiddenapi::ApiList::FromDexFlags(decoded_flags).IsValid()) {
         ErrorStringPrintf("Hiddenapi class data flags invalid (%u) for %s %i",
                           decoded_flags, member_type, member.GetIndex());
         failure = true;

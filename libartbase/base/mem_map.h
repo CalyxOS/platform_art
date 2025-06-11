@@ -37,13 +37,9 @@
 
 namespace art {
 
-#if defined(__LP64__) && !defined(__Fuchsia__) && \
-    (defined(__aarch64__) || defined(__riscv) || defined(__APPLE__))
+#if defined(__LP64__) && !defined(__Fuchsia__) && !defined(_WINDOWS_)
 #define USE_ART_LOW_4G_ALLOCATOR 1
 #else
-#if defined(__LP64__) && !defined(__Fuchsia__) && !defined(__x86_64__)
-#error "Unrecognized 64-bit architecture."
-#endif
 #define USE_ART_LOW_4G_ALLOCATOR 0
 #endif
 

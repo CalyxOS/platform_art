@@ -354,16 +354,21 @@ TEST_F(MemMapTest, MapAnonymousEmpty) {
 }
 
 TEST_F(MemMapTest, MapAnonymousFailNullError) {
+  // Host system's mmap_min_addr configuration could allow for arbitrarily low addresses to be
+  // successfully mapped, breaking the expectation that the MapAnonymous call should fail.
+  TEST_DISABLED_FOR_HOST();
+
   CommonInit();
+  uint8_t* invalid_page[16];  // Use this address as mmap hint address.
   const size_t page_size = MemMap::GetPageSize();
   // Test that we don't crash with a null error_str when mapping at an invalid location.
   MemMap map = MemMap::MapAnonymous("MapAnonymousInvalid",
-                                    reinterpret_cast<uint8_t*>(static_cast<size_t>(page_size)),
+                                    reinterpret_cast<uint8_t*>(AlignDown(invalid_page, page_size)),
                                     0x20000,
                                     PROT_READ | PROT_WRITE,
-                                    /*low_4gb=*/ false,
-                                    /*reuse=*/ false,
-                                    /*reservation=*/ nullptr,
+                                    /*low_4gb=*/false,
+                                    /*reuse=*/false,
+                                    /*reservation=*/nullptr,
                                     nullptr);
   ASSERT_FALSE(map.IsValid());
 }
@@ -894,17 +899,17 @@ TEST_F(MemMapTest, Reservation) {
 
 namespace {
 
-class DumpMapsOnFailListener : public testing::EmptyTestEventListener {
-  void OnTestPartResult(const testing::TestPartResult& result) override {
+class DumpMapsOnFailListener : public ::testing::EmptyTestEventListener {
+  void OnTestPartResult(const ::testing::TestPartResult& result) override {
     switch (result.type()) {
-      case testing::TestPartResult::kFatalFailure:
+      case ::testing::TestPartResult::kFatalFailure:
         art::PrintFileToLog("/proc/self/maps", android::base::LogSeverity::ERROR);
         break;
 
       // TODO: Could consider logging on EXPECT failures.
-      case testing::TestPartResult::kNonFatalFailure:
-      case testing::TestPartResult::kSkip:
-      case testing::TestPartResult::kSuccess:
+      case ::testing::TestPartResult::kNonFatalFailure:
+      case ::testing::TestPartResult::kSkip:
+      case ::testing::TestPartResult::kSuccess:
         break;
     }
   }
@@ -916,5 +921,5 @@ class DumpMapsOnFailListener : public testing::EmptyTestEventListener {
 extern "C"
 __attribute__((visibility("default"))) __attribute__((used))
 void ArtTestGlobalInit() {
-  testing::UnitTest::GetInstance()->listeners().Append(new DumpMapsOnFailListener());
+  ::testing::UnitTest::GetInstance()->listeners().Append(new DumpMapsOnFailListener());
 }

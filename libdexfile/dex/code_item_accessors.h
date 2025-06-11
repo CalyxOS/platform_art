@@ -30,7 +30,6 @@ struct CodeItem;
 struct TryItem;
 }  // namespace dex
 
-class ArtMethod;
 class DexFile;
 class DexInstructionIterator;
 template <typename Iter>
@@ -42,8 +41,6 @@ class CodeItemInstructionAccessor {
  public:
   ALWAYS_INLINE CodeItemInstructionAccessor(const DexFile& dex_file,
                                             const dex::CodeItem* code_item);
-
-  ALWAYS_INLINE explicit CodeItemInstructionAccessor(ArtMethod* method);
 
   ALWAYS_INLINE DexInstructionIterator begin() const;
 
@@ -154,8 +151,6 @@ class CodeItemDebugInfoAccessor : public CodeItemDataAccessor {
   ALWAYS_INLINE void Init(const DexFile& dex_file,
                           const dex::CodeItem* code_item,
                           uint32_t dex_method_index);
-
-  ALWAYS_INLINE explicit CodeItemDebugInfoAccessor(ArtMethod* method);
 
   uint32_t DebugInfoOffset() const {
     return debug_info_offset_;

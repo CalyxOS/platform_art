@@ -220,6 +220,9 @@ void DisassemblerArm::CustomDisassembler::CustomDisassemblerStream::PrintLiteral
 DisassemblerArm::DisassemblerArm(DisassemblerOptions* options)
     : Disassembler(options), disasm_(std::make_unique<CustomDisassembler>(output_, options)) {}
 
+DisassemblerArm::~DisassemblerArm() {
+}
+
 size_t DisassemblerArm::Dump(std::ostream& os, const uint8_t* begin) {
   uintptr_t next;
   // Remove the Thumb specifier bit; no effect if begin does not point to T32 code.

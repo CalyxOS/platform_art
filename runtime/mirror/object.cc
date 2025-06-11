@@ -248,8 +248,8 @@ void Object::CheckFieldAssignmentImpl(MemberOffset field_offset, ObjPtr<Object> 
     return;
   }
   for (ObjPtr<Class> cur = c; cur != nullptr; cur = cur->GetSuperClass()) {
-    for (ArtField& field : cur->GetIFields()) {
-      if (field.GetOffset().Int32Value() == field_offset.Int32Value()) {
+    for (ArtField& field : cur->GetFields()) {
+      if (!field.IsStatic() && field.GetOffset().Int32Value() == field_offset.Int32Value()) {
         CHECK_NE(field.GetTypeAsPrimitiveType(), Primitive::kPrimNot);
         // TODO: resolve the field type for moving GC.
         ObjPtr<mirror::Class> field_type =
@@ -266,8 +266,8 @@ void Object::CheckFieldAssignmentImpl(MemberOffset field_offset, ObjPtr<Object> 
     return;
   }
   if (IsClass()) {
-    for (ArtField& field : AsClass()->GetSFields()) {
-      if (field.GetOffset().Int32Value() == field_offset.Int32Value()) {
+    for (ArtField& field : AsClass()->GetFields()) {
+      if (field.IsStatic() && field.GetOffset().Int32Value() == field_offset.Int32Value()) {
         CHECK_NE(field.GetTypeAsPrimitiveType(), Primitive::kPrimNot);
         // TODO: resolve the field type for moving GC.
         ObjPtr<mirror::Class> field_type =

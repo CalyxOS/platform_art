@@ -301,7 +301,7 @@ bool InstructionSimplifierVisitor::TryCombineVecMultiplyAccumulate(HVecMul* mul)
       return false;
   }
 
-  ArenaAllocator* allocator = mul->GetBlock()->GetGraph()->GetAllocator();
+  ArenaAllocator* allocator = GetGraph()->GetAllocator();
   if (!mul->HasOnlyOneNonEnvironmentUse()) {
     return false;
   }
@@ -1800,8 +1800,7 @@ static bool RecognizeAndSimplifyClassCheck(HCondition* condition) {
 
   {
     ScopedObjectAccess soa(Thread::Current());
-    ArtField* field = GetClassRoot<mirror::Object>()->GetInstanceField(0);
-    DCHECK_EQ(std::string(field->GetName()), "shadow$_klass_");
+    ArtField* field = WellKnownClasses::java_lang_Object_shadowKlass;
     if (field_get->GetFieldInfo().GetField() != field) {
       return false;
     }
@@ -3562,7 +3561,7 @@ bool InstructionSimplifierVisitor::TryHandleAssociativeAndCommutativeOperation(
   return true;
 }
 
-static HBinaryOperation* AsAddOrSub(HInstruction* binop) {
+static HBinaryOperation* AsAddOrSubOrNull(HInstruction* binop) {
   return (binop->IsAdd() || binop->IsSub()) ? binop->AsBinaryOperation() : nullptr;
 }
 
@@ -3607,9 +3606,9 @@ bool InstructionSimplifierVisitor::TrySubtractionChainSimplification(
     return false;
   }
 
-  HBinaryOperation* y = (AsAddOrSub(left) != nullptr)
+  HBinaryOperation* y = (AsAddOrSubOrNull(left) != nullptr)
       ? left->AsBinaryOperation()
-      : AsAddOrSub(right);
+      : AsAddOrSubOrNull(right);
   // If y has more than one use, we do not perform the optimization because
   // it might increase code size (e.g. if the new constant is no longer
   // encodable as an immediate operand in the target ISA).
@@ -3638,8 +3637,8 @@ bool InstructionSimplifierVisitor::TrySubtractionChainSimplification(
   bool is_x_negated = is_y_negated ^ ((x == right) && y->IsSub());
   int64_t const3_val = ComputeAddition(type, const1_val, const2_val);
   HBasicBlock* block = instruction->GetBlock();
-  HConstant* const3 = block->GetGraph()->GetConstant(type, const3_val);
-  ArenaAllocator* allocator = instruction->GetAllocator();
+  HConstant* const3 = GetGraph()->GetConstant(type, const3_val);
+  ArenaAllocator* allocator = GetGraph()->GetAllocator();
   HInstruction* z;
 
   if (is_x_negated) {

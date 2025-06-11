@@ -88,7 +88,6 @@ static constexpr int32_t kFClassNaNMinValue = 0x100;
   V(CRC32Update)                                \
   V(CRC32UpdateBytes)                           \
   V(CRC32UpdateByteBuffer)                      \
-  V(MethodHandleInvokeExact)                    \
   V(MethodHandleInvoke)                         \
   V(UnsafeArrayBaseOffset)                      \
   V(JdkUnsafeArrayBaseOffset)                   \
@@ -505,7 +504,6 @@ class CodeGeneratorRISCV64 : public CodeGenerator {
   // Generate code to invoke a runtime entry point.
   void InvokeRuntime(QuickEntrypointEnum entrypoint,
                      HInstruction* instruction,
-                     uint32_t dex_pc,
                      SlowPathCode* slow_path = nullptr) override;
 
   // Generate code to invoke a runtime entry point, but do not record

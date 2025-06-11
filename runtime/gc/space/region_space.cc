@@ -215,7 +215,7 @@ bool RegionSpace::Region::GetUseGenerationalCC() {
   // We are retrieving the info from Heap, instead of the cached version in
   // RegionSpace, because accessing the Heap from a Region object is easier
   // than accessing the RegionSpace.
-  return art::Runtime::Current()->GetHeap()->GetUseGenerationalCC();
+  return art::Runtime::Current()->GetHeap()->GetUseGenerational();
 }
 
 inline bool RegionSpace::Region::ShouldBeEvacuated(EvacMode evac_mode) {

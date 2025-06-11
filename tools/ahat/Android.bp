@@ -13,11 +13,6 @@
 // limitations under the License.
 
 package {
-    // See: http://go/android-license-faq
-    // A large-scale-change added 'default_applicable_licenses' to import
-    // all of the 'license_kinds' from "art_license"
-    // to get the below license kinds:
-    //   SPDX-license-identifier-Apache-2.0
     default_applicable_licenses: ["art_license"],
 }
 
@@ -34,9 +29,6 @@ java_binary_host {
     // Use a relaxed version to allow distribution against older runtimes.
     java_version: "11",
     javacflags: ["-Xdoclint:all/protected"],
-    static_libs: [
-        "guava",
-    ],
 }
 
 // --- ahat-test-dump.jar --------------
@@ -59,9 +51,52 @@ java_test_helper_library {
     srcs: ["src/ri-test-dump/**/*.java"],
 }
 
+java_binary_host {
+    name: "ahat-ri-test-dump-bin",
+    static_libs: ["ahat-ri-test-dump"],
+    main_class: "Main",
+}
+
 cc_library_shared {
     name: "libahat-test-jni",
     srcs: ["src/test/jni/**/*.cpp"],
     header_libs: ["jni_headers"],
     host_supported: true,
+}
+
+java_genrule {
+    name: "ahat-test-dump-gen",
+    srcs: [
+        "ahat-test-dump-gen.sh.in",
+        ":ahat-test-dump",
+    ],
+    out: ["ahat-test-dump-gen.sh"],
+    cmd: "sed -e s=@AHAT_TEST_DUMP_JAR@=$(location :ahat-test-dump)= $(location ahat-test-dump-gen.sh.in) > $(out)",
+}
+
+// Run ahat-ri-test-dump to generate ri-test-dump.hprof
+genrule {
+    name: "ahat_ri_test_dump_hprof",
+    out: ["ri-test-dump.hprof"],
+    tools: ["ahat-ri-test-dump-bin"],
+    cmd: "$(location ahat-ri-test-dump-bin) $(out)",
+}
+
+// To run these tests, use: atest ahat-tests --host
+java_test_host {
+    name: "ahat-tests",
+    srcs: ["src/test/**/*.java"],
+    manifest: "etc/ahat-tests.mf",
+    java_resources: [
+        ":ahat_ri_test_dump_hprof",
+        ":ahat-tests-res",
+    ],
+    static_libs: [
+        "ahat",
+        "junit-host",
+    ],
+    test_options: {
+        unit_test: true,
+    },
+    test_suites: ["general-tests"],
 }

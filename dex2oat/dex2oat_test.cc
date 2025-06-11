@@ -1430,7 +1430,6 @@ TEST_F(Dex2oatTest, DontExtract) {
   {
     // Check the vdex doesn't have dex.
     std::unique_ptr<VdexFile> vdex(VdexFile::Open(vdex_location,
-                                                  /*writable=*/false,
                                                   /*low_4gb=*/false,
                                                   &error_msg));
     ASSERT_TRUE(vdex != nullptr);
@@ -1776,7 +1775,6 @@ TEST_F(Dex2oatTest, DontCopyPlainDex) {
 
   // Check that the vdex doesn't have dex code.
   std::unique_ptr<VdexFile> vdex(VdexFile::Open(vdex_location,
-                                                /*writable=*/false,
                                                 /*low_4gb=*/false,
                                                 &error_msg));
   ASSERT_TRUE(vdex != nullptr);
@@ -1797,7 +1795,7 @@ TEST_F(Dex2oatTest, AppImageResolveStrings) {
           bool mutated_successfully = false;
           // Change the dex instructions to make an opcode that spans past the end of the code item.
           for (ClassAccessor accessor : dex->GetClasses()) {
-            if (accessor.GetDescriptor() == std::string("LStringLiterals$StartupClass;")) {
+            if (accessor.GetDescriptorView() == "LStringLiterals$StartupClass;") {
               classes.push_back(accessor.GetClassIdx());
             }
             for (const ClassAccessor::Method& method : accessor.GetMethods()) {
@@ -1816,13 +1814,6 @@ TEST_F(Dex2oatTest, AppImageResolveStrings) {
                 const_cast<Instruction&>(last_instruction.Inst())
                     .SetOpcode(Instruction::CONST_STRING_JUMBO);
                 mutated_successfully = true;
-                // Test that the safe iterator doesn't go past the end.
-                SafeDexInstructionIterator it2(instructions.begin(), instructions.end());
-                while (!it2.IsErrorState()) {
-                  ++it2;
-                }
-                EXPECT_TRUE(it2 == last_instruction);
-                EXPECT_TRUE(it2 < instructions.end());
                 methods.push_back(method.GetIndex());
                 mutated_successfully = true;
               } else if (method_name == "startUpMethod") {
@@ -1890,8 +1881,6 @@ TEST_F(Dex2oatTest, AppImageResolveStrings) {
     // Classes initializers
     EXPECT_TRUE(seen.find("Startup init") != seen.end());
     EXPECT_TRUE(seen.find("Other class init") == seen.end());
-    // Expect the sets match.
-    EXPECT_GE(seen.size(), seen.size());
 
     // Verify what strings are marked as boot image.
     std::set<std::string> boot_image_strings;
@@ -2040,19 +2029,15 @@ TEST_F(Dex2oatTest, LoadOutOfDateOatFile) {
     {
       std::string error_msg;
       std::unique_ptr<ElfFile> elf_file(ElfFile::Open(file.get(),
-                                                      /*writable=*/false,
-                                                      /*program_header_only=*/true,
                                                       /*low_4gb=*/false,
                                                       &error_msg));
       ASSERT_TRUE(elf_file != nullptr) << error_msg;
-      ASSERT_TRUE(elf_file->Load(file.get(),
-                                 /*executable=*/false,
+      ASSERT_TRUE(elf_file->Load(/*executable=*/false,
                                  /*low_4gb=*/false,
                                  /*reservation=*/nullptr,
                                  &error_msg))
           << error_msg;
-      const uint8_t* base_address = elf_file->Is64Bit() ? elf_file->GetImpl64()->GetBaseAddress() :
-                                                          elf_file->GetImpl32()->GetBaseAddress();
+      const uint8_t* base_address = elf_file->GetBaseAddress();
       const uint8_t* oatdata = elf_file->FindDynamicSymbolAddress("oatdata");
       ASSERT_TRUE(oatdata != nullptr);
       ASSERT_TRUE(oatdata > base_address);

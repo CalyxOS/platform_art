@@ -35,7 +35,7 @@ inline MethodReference MethodVerifier::GetMethodReference() const {
 }
 
 inline bool MethodVerifier::HasFailures() const {
-  return !failure_messages_.empty();
+  return !failures_.empty();
 }
 
 }  // namespace verifier

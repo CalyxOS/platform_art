@@ -62,11 +62,14 @@ class ThreadList {
 
   void ShutDown();
 
-  void DumpForSigQuit(std::ostream& os)
-      REQUIRES(!Locks::thread_list_lock_, !Locks::mutator_lock_);
-  // For thread suspend timeout dumps.
+  // Dump stacks for all threads.
+  // This version includes some additional data.
+  void DumpForSigQuit(std::ostream& os) REQUIRES(!Locks::thread_list_lock_, !Locks::mutator_lock_);
+
+  // This version is less jank-prone if mutator_lock_ is not held.
   EXPORT void Dump(std::ostream& os, bool dump_native_stack = true)
       REQUIRES(!Locks::thread_list_lock_, !Locks::thread_suspend_count_lock_);
+
   pid_t GetLockOwner();  // For SignalCatcher.
 
   // Thread suspension support.
@@ -138,6 +141,13 @@ class ThreadList {
   // threads must act on that. It is possible that on return there will be threads which have not,
   // and will not, run the checkpoint_function, and neither have/will any of their ancestors.
   //
+  // We guarantee that if a thread calls RunCheckpoint() then, if at point X RunCheckpoint() has
+  // returned, and all checkpoints have been properly observed to have completed (usually via a
+  // barrier), then every thread has executed a code sequence S during which it remained in a
+  // suspended state, such that the call to `RunCheckpoint` happens-before the end of S, and the
+  // beginning of S happened-before X.  Thus after a RunCheckpoint() call, no preexisting
+  // thread can still be relying on global information it caches between suspend points.
+  //
   // TODO: Is it possible to simplify mutator_lock handling here? Should this wait for completion?
   EXPORT size_t RunCheckpoint(Closure* checkpoint_function,
                               Closure* callback = nullptr,
@@ -157,6 +167,10 @@ class ThreadList {
   // in-flight mutator heap access (eg. a read barrier.) Runnable threads will respond by
   // decrementing the empty checkpoint barrier count. This works even when the weak ref access is
   // disabled. Only one concurrent use is currently supported.
+  // TODO(b/382722942): This is intended to guarantee the analogous memory ordering property to
+  // RunCheckpoint(). It over-optimizes by always avoiding thread suspension and hence does not in
+  // fact guarantee this. (See the discussion in `mutator_gc_coord.md`.) Fix this by implementing
+  // this with RunCheckpoint() instead.
   void RunEmptyCheckpoint()
       REQUIRES(!Locks::thread_list_lock_, !Locks::thread_suspend_count_lock_);
 
@@ -213,6 +227,7 @@ class ThreadList {
   EXPORT void SweepInterpreterCaches(IsMarkedVisitor* visitor) const
       REQUIRES(Locks::mutator_lock_, !Locks::thread_list_lock_);
 
+  void ClearInterpreterCaches() const REQUIRES(Locks::mutator_lock_, !Locks::thread_list_lock_);
   // Return a copy of the thread list.
   std::list<Thread*> GetList() REQUIRES(Locks::thread_list_lock_) {
     return list_;

@@ -289,7 +289,7 @@ class HGraph : public ArenaObject<kArenaAllocGraph> {
   void ComputeDominanceInformation();
   void ClearDominanceInformation();
   void ClearLoopInformation();
-  void FindBackEdges(ArenaBitVector* visited);
+  void FindBackEdges(/*out*/ BitVectorView<size_t> visited);
   GraphAnalysisResult BuildDominatorTree();
   GraphAnalysisResult RecomputeDominatorTree();
   void SimplifyCFG();
@@ -359,10 +359,7 @@ class HGraph : public ArenaObject<kArenaAllocGraph> {
 
   void SimplifyLoop(HBasicBlock* header);
 
-  int32_t GetNextInstructionId() {
-    CHECK_NE(current_instruction_id_, INT32_MAX);
-    return current_instruction_id_++;
-  }
+  ALWAYS_INLINE int32_t AllocateInstructionId();
 
   int32_t GetCurrentInstructionId() const {
     return current_instruction_id_;
@@ -548,8 +545,8 @@ class HGraph : public ArenaObject<kArenaAllocGraph> {
   bool IsUsefulOptimizing() const { return useful_optimizing_; }
 
  private:
-  void RemoveDeadBlocksInstructionsAsUsersAndDisconnect(const ArenaBitVector& visited) const;
-  void RemoveDeadBlocks(const ArenaBitVector& visited);
+  void RemoveDeadBlocksInstructionsAsUsersAndDisconnect(BitVectorView<const size_t> visited) const;
+  void RemoveDeadBlocks(BitVectorView<const size_t> visited);
 
   template <class InstructionType, typename ValueType>
   InstructionType* CreateConstant(ValueType value,
@@ -1136,7 +1133,7 @@ class HBasicBlock : public ArenaObject<kArenaAllocBasicBlock> {
   // Disconnects `this` from all its successors and updates their phis, if the successors have them.
   // If `visited` is provided, it will use the information to know if a successor is reachable and
   // skip updating those phis.
-  void DisconnectFromSuccessors(const ArenaBitVector* visited = nullptr);
+  void DisconnectFromSuccessors(BitVectorView<const size_t> visited = {});
 
   // Removes the catch phi uses of the instructions in `this`, and then remove the instruction
   // itself. If `building_dominator_tree` is true, it will not remove the instruction as user, since
@@ -1329,8 +1326,8 @@ class HLoopInformationOutwardIterator : public ValueObject {
   M(GreaterThan, Condition)                                             \
   M(GreaterThanOrEqual, Condition)                                      \
   M(If, Instruction)                                                    \
-  M(InstanceFieldGet, Instruction)                                      \
-  M(InstanceFieldSet, Instruction)                                      \
+  M(InstanceFieldGet, FieldAccess)                                      \
+  M(InstanceFieldSet, FieldAccess)                                      \
   M(InstanceOf, Instruction)                                            \
   M(IntConstant, Constant)                                              \
   M(IntermediateAddress, Instruction)                                   \
@@ -1375,8 +1372,8 @@ class HLoopInformationOutwardIterator : public ValueObject {
   M(Ror, BinaryOperation)                                               \
   M(Shl, BinaryOperation)                                               \
   M(Shr, BinaryOperation)                                               \
-  M(StaticFieldGet, Instruction)                                        \
-  M(StaticFieldSet, Instruction)                                        \
+  M(StaticFieldGet, FieldAccess)                                        \
+  M(StaticFieldSet, FieldAccess)                                        \
   M(StringBuilderAppend, Instruction)                                   \
   M(UnresolvedInstanceFieldGet, Instruction)                            \
   M(UnresolvedInstanceFieldSet, Instruction)                            \
@@ -1497,6 +1494,7 @@ class HLoopInformationOutwardIterator : public ValueObject {
   M(Constant, Instruction)                                              \
   M(UnaryOperation, Instruction)                                        \
   M(BinaryOperation, Instruction)                                       \
+  M(FieldAccess, Instruction)                                           \
   M(Invoke, Instruction)                                                \
   M(VecOperation, Instruction)                                          \
   M(VecUnaryOperation, VecOperation)                                    \
@@ -1733,26 +1731,26 @@ class SideEffects : public ValueObject {
   }
 
   bool HasSideEffects() const {
-    return (flags_ & kAllChangeBits);
+    return (flags_ & kAllChangeBits) != 0u;
   }
 
   bool HasDependencies() const {
-    return (flags_ & kAllDependOnBits);
+    return (flags_ & kAllDependOnBits) != 0u;
   }
 
   // Returns true if there are no side effects or dependencies.
   bool DoesNothing() const {
-    return flags_ == 0;
+    return flags_ == 0u;
   }
 
   // Returns true if something is written.
   bool DoesAnyWrite() const {
-    return (flags_ & kAllWrites);
+    return (flags_ & kAllWrites) != 0u;
   }
 
   // Returns true if something is read.
   bool DoesAnyRead() const {
-    return (flags_ & kAllReads);
+    return (flags_ & kAllReads) != 0u;
   }
 
   // Returns true if potentially everything is written and read
@@ -1768,7 +1766,7 @@ class SideEffects : public ValueObject {
   // Returns true if `this` may read something written by `other`.
   bool MayDependOn(SideEffects other) const {
     const uint64_t depends_on_flags = (flags_ & kAllDependOnBits) >> kChangeBits;
-    return (other.flags_ & depends_on_flags);
+    return (other.flags_ & depends_on_flags) != 0u;
   }
 
   // Returns string representation of flags (for debugging only).
@@ -1893,20 +1891,22 @@ class HEnvironment : public ArenaObject<kArenaAllocEnvironment> {
       parent_->SetAndCopyParentChain(allocator, parent);
     } else {
       parent_ = Create(allocator, *parent, holder_);
-      parent_->CopyFrom(parent);
+      parent_->CopyFrom(allocator, parent);
       if (parent->GetParent() != nullptr) {
         parent_->SetAndCopyParentChain(allocator, parent->GetParent());
       }
     }
   }
 
-  void CopyFrom(ArrayRef<HInstruction* const> locals);
-  void CopyFrom(const HEnvironment* environment);
+  void CopyFrom(ArenaAllocator* allocator, ArrayRef<HInstruction* const> locals);
+  void CopyFrom(ArenaAllocator* allocator, const HEnvironment* environment);
 
   // Copy from `env`. If it's a loop phi for `loop_header`, copy the first
   // input to the loop phi instead. This is for inserting instructions that
   // require an environment (like HDeoptimization) in the loop pre-header.
-  void CopyFromWithLoopPhiAdjustment(HEnvironment* env, HBasicBlock* loop_header);
+  void CopyFromWithLoopPhiAdjustment(ArenaAllocator* allocator,
+                                     HEnvironment* env,
+                                     HBasicBlock* loop_header);
 
   void SetRawEnvAt(size_t index, HInstruction* instruction) {
     GetVRegs()[index] = HUserRecord<HEnvironment*>(instruction);
@@ -2114,7 +2114,6 @@ class HInstruction : public ArenaObject<kArenaAllocInstruction> {
   HInstruction* GetPreviousDisregardingMoves() const;
 
   HBasicBlock* GetBlock() const { return block_; }
-  ArenaAllocator* GetAllocator() const { return block_->GetGraph()->GetAllocator(); }
   void SetBlock(HBasicBlock* block) { block_ = block; }
   bool IsInBlock() const { return block_ != nullptr; }
   bool IsInLoop() const { return block_->IsInLoop(); }
@@ -2227,25 +2226,46 @@ class HInstruction : public ArenaObject<kArenaAllocInstruction> {
                                               GetPackedFlag<kFlagReferenceTypeIsExact>());
   }
 
-  void AddUseAt(HInstruction* user, size_t index) {
+  void AddUseAt(ArenaAllocator* allocator, HInstruction* user, size_t index) {
     DCHECK(user != nullptr);
-    // Note: fixup_end remains valid across push_front().
-    auto fixup_end = uses_.empty() ? uses_.begin() : ++uses_.begin();
-    ArenaAllocator* allocator = user->GetBlock()->GetGraph()->GetAllocator();
     HUseListNode<HInstruction*>* new_node =
         new (allocator) HUseListNode<HInstruction*>(user, index);
+    // Note: `old_begin` remains valid across `push_front()`.
+    auto old_begin = uses_.begin();
     uses_.push_front(*new_node);
-    FixUpUserRecordsAfterUseInsertion(fixup_end);
+    // To speed up this code, we inline the
+    //     FixUpUserRecordsAfterUseInsertion(
+    //         old_begin != uses_.end() ? ++old_begin : old_begin);
+    // to reduce branching as we know that we're going to fix up either one or two entries.
+    auto new_begin = uses_.begin();
+    user->SetRawInputRecordAt(index, HUserRecord<HInstruction*>(this, uses_.before_begin()));
+    if (old_begin != uses_.end()) {
+      HInstruction* old_begin_user = old_begin->GetUser();
+      size_t old_begin_index = old_begin->GetIndex();
+      old_begin_user->SetRawInputRecordAt(
+          old_begin_index, HUserRecord<HInstruction*>(this, new_begin));
+    }
   }
 
-  void AddEnvUseAt(HEnvironment* user, size_t index) {
+  void AddEnvUseAt(ArenaAllocator* allocator, HEnvironment* user, size_t index) {
     DCHECK(user != nullptr);
-    // Note: env_fixup_end remains valid across push_front().
-    auto env_fixup_end = env_uses_.empty() ? env_uses_.begin() : ++env_uses_.begin();
     HUseListNode<HEnvironment*>* new_node =
-        new (GetBlock()->GetGraph()->GetAllocator()) HUseListNode<HEnvironment*>(user, index);
+        new (allocator) HUseListNode<HEnvironment*>(user, index);
+    // Note: `old_env_begin` remains valid across `push_front()`.
+    auto old_env_begin = env_uses_.begin();
     env_uses_.push_front(*new_node);
-    FixUpUserRecordsAfterEnvUseInsertion(env_fixup_end);
+    // To speed up this code, we inline the
+    //     FixUpUserRecordsAfterEnvUseInsertion(
+    //         old_env_begin != env_uses_.end() ? ++old_env_begin : old_env_begin);
+    // to reduce branching as we know that we're going to fix up either one or two entries.
+    auto new_env_begin = env_uses_.begin();
+    user->GetVRegs()[index] = HUserRecord<HEnvironment*>(this, env_uses_.before_begin());
+    if (old_env_begin != env_uses_.end()) {
+      HEnvironment* old_env_begin_user = old_env_begin->GetUser();
+      size_t old_env_begin_index = old_env_begin->GetIndex();
+      old_env_begin_user->GetVRegs()[old_env_begin_index] =
+          HUserRecord<HEnvironment*>(this, new_env_begin);
+    }
   }
 
   void RemoveAsUserOfInput(size_t input) {
@@ -2343,18 +2363,18 @@ class HInstruction : public ArenaObject<kArenaAllocInstruction> {
     DCHECK(environment_ == nullptr);
     ArenaAllocator* allocator = GetBlock()->GetGraph()->GetAllocator();
     environment_ = HEnvironment::Create(allocator, *environment, this);
-    environment_->CopyFrom(environment);
+    environment_->CopyFrom(allocator, environment);
     if (environment->GetParent() != nullptr) {
       environment_->SetAndCopyParentChain(allocator, environment->GetParent());
     }
   }
 
   void CopyEnvironmentFromWithLoopPhiAdjustment(HEnvironment* environment,
-                                                HBasicBlock* block) {
+                                                HBasicBlock* loop_header) {
     DCHECK(environment_ == nullptr);
-    ArenaAllocator* allocator = GetBlock()->GetGraph()->GetAllocator();
+    ArenaAllocator* allocator = loop_header->GetGraph()->GetAllocator();
     environment_ = HEnvironment::Create(allocator, *environment, this);
-    environment_->CopyFromWithLoopPhiAdjustment(environment, block);
+    environment_->CopyFromWithLoopPhiAdjustment(allocator, environment, loop_header);
     if (environment->GetParent() != nullptr) {
       environment_->SetAndCopyParentChain(allocator, environment->GetParent());
     }
@@ -2420,17 +2440,6 @@ class HInstruction : public ArenaObject<kArenaAllocInstruction> {
   virtual HInstruction* Clone([[maybe_unused]] ArenaAllocator* arena) const {
     LOG(FATAL) << "Cloning is not implemented for the instruction " <<
                   DebugName() << " " << GetId();
-    UNREACHABLE();
-  }
-
-  virtual bool IsFieldAccess() const {
-    return false;
-  }
-
-  virtual const FieldInfo& GetFieldInfo() const {
-    CHECK(IsFieldAccess()) << "Only callable on field accessors not " << DebugName() << " "
-                           << *this;
-    LOG(FATAL) << "Must be overridden by field accessors. Not implemented by " << *this;
     UNREACHABLE();
   }
 
@@ -2850,16 +2859,13 @@ class HVariableInputSizeInstruction : public HInstruction {
   ArenaVector<HUserRecord<HInstruction*>> inputs_;
 };
 
-template<size_t N>
-class HExpression : public HInstruction {
+template<size_t N, typename Base = HInstruction>
+class HExpression : public Base {
  public:
-  HExpression<N>(InstructionKind kind, SideEffects side_effects, uint32_t dex_pc)
-      : HInstruction(kind, side_effects, dex_pc), inputs_() {}
-  HExpression<N>(InstructionKind kind,
-                 DataType::Type type,
-                 SideEffects side_effects,
-                 uint32_t dex_pc)
-      : HInstruction(kind, type, side_effects, dex_pc), inputs_() {}
+  template <typename... Args>
+  explicit HExpression(Args&&... args)
+      : Base(std::forward<Args>(args)...), inputs_() {}
+
   virtual ~HExpression() {}
 
   using HInstruction::GetInputRecords;  // Keep the const version visible.
@@ -2868,7 +2874,7 @@ class HExpression : public HInstruction {
   }
 
  protected:
-  DEFAULT_COPY_CONSTRUCTOR(Expression<N>);
+  DEFAULT_COPY_CONSTRUCTOR(Expression);
 
  private:
   std::array<HUserRecord<HInstruction*>, N> inputs_;
@@ -2877,10 +2883,12 @@ class HExpression : public HInstruction {
 };
 
 // HExpression specialization for N=0.
-template<>
-class HExpression<0> : public HInstruction {
+template<typename Base>
+class HExpression<0, Base> : public Base {
  public:
-  using HInstruction::HInstruction;
+  template <typename... Args>
+  explicit HExpression(Args&&... args)
+      : Base(std::forward<Args>(args)...) {}
 
   virtual ~HExpression() {}
 
@@ -2890,7 +2898,7 @@ class HExpression<0> : public HInstruction {
   }
 
  protected:
-  DEFAULT_COPY_CONSTRUCTOR(Expression<0>);
+  DEFAULT_COPY_CONSTRUCTOR(Expression);
 
  private:
   friend class SsaBuilder;
@@ -3179,12 +3187,6 @@ class HIntConstant final : public HConstant {
   bool IsTrue() const { return GetValue() == 1; }
   bool IsFalse() const { return GetValue() == 0; }
 
-  DECLARE_INSTRUCTION(IntConstant);
-
- protected:
-  DEFAULT_COPY_CONSTRUCTOR(IntConstant);
-
- private:
   explicit HIntConstant(int32_t value)
       : HConstant(kIntConstant, DataType::Type::kInt32), value_(value) {
   }
@@ -3193,6 +3195,12 @@ class HIntConstant final : public HConstant {
         value_(value ? 1 : 0) {
   }
 
+  DECLARE_INSTRUCTION(IntConstant);
+
+ protected:
+  DEFAULT_COPY_CONSTRUCTOR(IntConstant);
+
+ private:
   const int32_t value_;
 
   friend class HGraph;
@@ -3697,7 +3705,7 @@ class HUnaryOperation : public HExpression<1> {
   HInstruction* GetInput() const { return InputAt(0); }
   DataType::Type GetResultType() const { return GetType(); }
 
-  bool CanBeMoved() const override { return true; }
+  bool CanBeMoved() const final { return true; }
   bool InstructionDataEquals([[maybe_unused]] const HInstruction* other) const override {
     return true;
   }
@@ -3788,7 +3796,7 @@ class HBinaryOperation : public HExpression<2> {
     }
   }
 
-  bool CanBeMoved() const override { return true; }
+  bool CanBeMoved() const final { return true; }
   bool InstructionDataEquals([[maybe_unused]] const HInstruction* other) const override {
     return true;
   }
@@ -5872,7 +5880,6 @@ class HNot final : public HUnaryOperation {
       : HUnaryOperation(kNot, result_type, input, dex_pc) {
   }
 
-  bool CanBeMoved() const override { return true; }
   bool InstructionDataEquals([[maybe_unused]] const HInstruction* other) const override {
     return true;
   }
@@ -5898,7 +5905,6 @@ class HBooleanNot final : public HUnaryOperation {
       : HUnaryOperation(kBooleanNot, DataType::Type::kBool, input, dex_pc) {
   }
 
-  bool CanBeMoved() const override { return true; }
   bool InstructionDataEquals([[maybe_unused]] const HInstruction* other) const override {
     return true;
   }
@@ -6047,7 +6053,42 @@ inline std::ostream& operator<<(std::ostream& os, const FieldInfo& a) {
   return a.Dump(os);
 }
 
-class HInstanceFieldGet final : public HExpression<1> {
+class HFieldAccess : public HInstruction {
+ public:
+  HFieldAccess(InstructionKind kind,
+               SideEffects side_effects,
+               ArtField* field,
+               DataType::Type field_type,
+               MemberOffset field_offset,
+               bool is_volatile,
+               uint32_t field_idx,
+               uint16_t declaring_class_def_index,
+               const DexFile& dex_file,
+               uint32_t dex_pc)
+      : HInstruction(kind, field_type, side_effects, dex_pc),
+        field_info_(field,
+                    field_offset,
+                    field_type,
+                    is_volatile,
+                    field_idx,
+                    declaring_class_def_index,
+                    dex_file) {}
+
+  const FieldInfo& GetFieldInfo() const { return field_info_; }
+  MemberOffset GetFieldOffset() const { return field_info_.GetFieldOffset(); }
+  DataType::Type GetFieldType() const { return field_info_.GetFieldType(); }
+  bool IsVolatile() const { return field_info_.IsVolatile(); }
+
+  DECLARE_ABSTRACT_INSTRUCTION(FieldAccess);
+
+ protected:
+  DEFAULT_COPY_CONSTRUCTOR(FieldAccess);
+
+ private:
+  const FieldInfo field_info_;
+};
+
+class HInstanceFieldGet final : public HExpression<1, HFieldAccess> {
  public:
   HInstanceFieldGet(HInstruction* object,
                     ArtField* field,
@@ -6059,16 +6100,15 @@ class HInstanceFieldGet final : public HExpression<1> {
                     const DexFile& dex_file,
                     uint32_t dex_pc)
       : HExpression(kInstanceFieldGet,
-                    field_type,
                     SideEffects::FieldReadOfType(field_type, is_volatile),
-                    dex_pc),
-        field_info_(field,
-                    field_offset,
+                    field,
                     field_type,
+                    field_offset,
                     is_volatile,
                     field_idx,
                     declaring_class_def_index,
-                    dex_file) {
+                    dex_file,
+                    dex_pc) {
     SetRawInputAt(0, object);
   }
 
@@ -6088,12 +6128,6 @@ class HInstanceFieldGet final : public HExpression<1> {
     return (HInstruction::ComputeHashCode() << 7) | GetFieldOffset().SizeValue();
   }
 
-  bool IsFieldAccess() const override { return true; }
-  const FieldInfo& GetFieldInfo() const override { return field_info_; }
-  MemberOffset GetFieldOffset() const { return field_info_.GetFieldOffset(); }
-  DataType::Type GetFieldType() const { return field_info_.GetFieldType(); }
-  bool IsVolatile() const { return field_info_.IsVolatile(); }
-
   void SetType(DataType::Type new_type) {
     DCHECK(DataType::IsIntegralType(GetType()));
     DCHECK(DataType::IsIntegralType(new_type));
@@ -6105,9 +6139,6 @@ class HInstanceFieldGet final : public HExpression<1> {
 
  protected:
   DEFAULT_COPY_CONSTRUCTOR(InstanceFieldGet);
-
- private:
-  const FieldInfo field_info_;
 };
 
 enum class WriteBarrierKind {
@@ -6125,7 +6156,7 @@ enum class WriteBarrierKind {
 };
 std::ostream& operator<<(std::ostream& os, WriteBarrierKind rhs);
 
-class HInstanceFieldSet final : public HExpression<2> {
+class HInstanceFieldSet final : public HExpression<2, HFieldAccess> {
  public:
   HInstanceFieldSet(HInstruction* object,
                     HInstruction* value,
@@ -6139,16 +6170,19 @@ class HInstanceFieldSet final : public HExpression<2> {
                     uint32_t dex_pc)
       : HExpression(kInstanceFieldSet,
                     SideEffects::FieldWriteOfType(field_type, is_volatile),
-                    dex_pc),
-        field_info_(field,
-                    field_offset,
+                    field,
                     field_type,
+                    field_offset,
                     is_volatile,
                     field_idx,
                     declaring_class_def_index,
-                    dex_file) {
+                    dex_file,
+                    dex_pc) {
     SetPackedFlag<kFlagValueCanBeNull>(true);
-    SetPackedField<WriteBarrierKindField>(WriteBarrierKind::kEmitNotBeingReliedOn);
+    SetPackedField<WriteBarrierKindField>(
+        field_type == DataType::Type::kReference
+            ? WriteBarrierKind::kEmitNotBeingReliedOn
+            : WriteBarrierKind::kDontEmit);
     SetRawInputAt(0, object);
     SetRawInputAt(1, value);
   }
@@ -6159,11 +6193,6 @@ class HInstanceFieldSet final : public HExpression<2> {
     return (obj == InputAt(0)) && art::CanDoImplicitNullCheckOn(GetFieldOffset().Uint32Value());
   }
 
-  bool IsFieldAccess() const override { return true; }
-  const FieldInfo& GetFieldInfo() const override { return field_info_; }
-  MemberOffset GetFieldOffset() const { return field_info_.GetFieldOffset(); }
-  DataType::Type GetFieldType() const { return field_info_.GetFieldType(); }
-  bool IsVolatile() const { return field_info_.IsVolatile(); }
   HInstruction* GetValue() const { return InputAt(1); }
   bool GetValueCanBeNull() const { return GetPackedFlag<kFlagValueCanBeNull>(); }
   void ClearValueCanBeNull() { SetPackedFlag<kFlagValueCanBeNull>(false); }
@@ -6192,7 +6221,6 @@ class HInstanceFieldSet final : public HExpression<2> {
   static_assert(kNumberOfInstanceFieldSetPackedBits <= kMaxNumberOfPackedBits,
                 "Too many packed fields.");
 
-  const FieldInfo field_info_;
   using WriteBarrierKindField =
       BitField<WriteBarrierKind, kWriteBarrierKind, kWriteBarrierKindSize>;
 };
@@ -6315,7 +6343,10 @@ class HArraySet final : public HExpression<3> {
     SetPackedFlag<kFlagNeedsTypeCheck>(value->GetType() == DataType::Type::kReference);
     SetPackedFlag<kFlagValueCanBeNull>(true);
     SetPackedFlag<kFlagStaticTypeOfArrayIsObjectArray>(false);
-    SetPackedField<WriteBarrierKindField>(WriteBarrierKind::kEmitNotBeingReliedOn);
+    SetPackedField<WriteBarrierKindField>(
+        value->GetType() == DataType::Type::kReference
+            ? WriteBarrierKind::kEmitNotBeingReliedOn
+            : WriteBarrierKind::kDontEmit);
     SetRawInputAt(0, array);
     SetRawInputAt(1, index);
     SetRawInputAt(2, value);
@@ -6841,7 +6872,7 @@ inline void HLoadClass::AddSpecialInput(HInstruction* special_input) {
          GetLoadKind() == LoadKind::kJitBootImageAddress) << GetLoadKind();
   DCHECK(special_input_.GetInstruction() == nullptr);
   special_input_ = HUserRecord<HInstruction*>(special_input);
-  special_input->AddUseAt(this, 0);
+  special_input->AddUseAt(GetBlock()->GetGraph()->GetAllocator(), this, 0);
 }
 
 class HLoadString final : public HInstruction {
@@ -7009,7 +7040,7 @@ inline void HLoadString::AddSpecialInput(HInstruction* special_input) {
   // so use the GetInputRecords() from the base class to set the input record.
   DCHECK(special_input_.GetInstruction() == nullptr);
   special_input_ = HUserRecord<HInstruction*>(special_input);
-  special_input->AddUseAt(this, 0);
+  special_input->AddUseAt(GetBlock()->GetGraph()->GetAllocator(), this, 0);
 }
 
 class HLoadMethodHandle final : public HInstruction {
@@ -7191,7 +7222,7 @@ class HClinitCheck final : public HExpression<1> {
   DEFAULT_COPY_CONSTRUCTOR(ClinitCheck);
 };
 
-class HStaticFieldGet final : public HExpression<1> {
+class HStaticFieldGet final : public HExpression<1, HFieldAccess> {
  public:
   HStaticFieldGet(HInstruction* cls,
                   ArtField* field,
@@ -7203,16 +7234,15 @@ class HStaticFieldGet final : public HExpression<1> {
                   const DexFile& dex_file,
                   uint32_t dex_pc)
       : HExpression(kStaticFieldGet,
-                    field_type,
                     SideEffects::FieldReadOfType(field_type, is_volatile),
-                    dex_pc),
-        field_info_(field,
-                    field_offset,
+                    field,
                     field_type,
+                    field_offset,
                     is_volatile,
                     field_idx,
                     declaring_class_def_index,
-                    dex_file) {
+                    dex_file,
+                    dex_pc) {
     SetRawInputAt(0, cls);
   }
 
@@ -7229,12 +7259,6 @@ class HStaticFieldGet final : public HExpression<1> {
     return (HInstruction::ComputeHashCode() << 7) | GetFieldOffset().SizeValue();
   }
 
-  bool IsFieldAccess() const override { return true; }
-  const FieldInfo& GetFieldInfo() const override { return field_info_; }
-  MemberOffset GetFieldOffset() const { return field_info_.GetFieldOffset(); }
-  DataType::Type GetFieldType() const { return field_info_.GetFieldType(); }
-  bool IsVolatile() const { return field_info_.IsVolatile(); }
-
   void SetType(DataType::Type new_type) {
     DCHECK(DataType::IsIntegralType(GetType()));
     DCHECK(DataType::IsIntegralType(new_type));
@@ -7246,12 +7270,9 @@ class HStaticFieldGet final : public HExpression<1> {
 
  protected:
   DEFAULT_COPY_CONSTRUCTOR(StaticFieldGet);
-
- private:
-  const FieldInfo field_info_;
 };
 
-class HStaticFieldSet final : public HExpression<2> {
+class HStaticFieldSet final : public HExpression<2, HFieldAccess> {
  public:
   HStaticFieldSet(HInstruction* cls,
                   HInstruction* value,
@@ -7265,26 +7286,24 @@ class HStaticFieldSet final : public HExpression<2> {
                   uint32_t dex_pc)
       : HExpression(kStaticFieldSet,
                     SideEffects::FieldWriteOfType(field_type, is_volatile),
-                    dex_pc),
-        field_info_(field,
-                    field_offset,
+                    field,
                     field_type,
+                    field_offset,
                     is_volatile,
                     field_idx,
                     declaring_class_def_index,
-                    dex_file) {
+                    dex_file,
+                    dex_pc) {
     SetPackedFlag<kFlagValueCanBeNull>(true);
-    SetPackedField<WriteBarrierKindField>(WriteBarrierKind::kEmitNotBeingReliedOn);
+    SetPackedField<WriteBarrierKindField>(
+        field_type == DataType::Type::kReference
+            ? WriteBarrierKind::kEmitNotBeingReliedOn
+            : WriteBarrierKind::kDontEmit);
     SetRawInputAt(0, cls);
     SetRawInputAt(1, value);
   }
 
   bool IsClonable() const override { return true; }
-  bool IsFieldAccess() const override { return true; }
-  const FieldInfo& GetFieldInfo() const override { return field_info_; }
-  MemberOffset GetFieldOffset() const { return field_info_.GetFieldOffset(); }
-  DataType::Type GetFieldType() const { return field_info_.GetFieldType(); }
-  bool IsVolatile() const { return field_info_.IsVolatile(); }
 
   HInstruction* GetValue() const { return InputAt(1); }
   bool GetValueCanBeNull() const { return GetPackedFlag<kFlagValueCanBeNull>(); }
@@ -7315,7 +7334,6 @@ class HStaticFieldSet final : public HExpression<2> {
   static_assert(kNumberOfStaticFieldSetPackedBits <= kMaxNumberOfPackedBits,
                 "Too many packed fields.");
 
-  const FieldInfo field_info_;
   using WriteBarrierKindField =
       BitField<WriteBarrierKind, kWriteBarrierKind, kWriteBarrierKindSize>;
 };
@@ -8392,6 +8410,7 @@ class HGraphVisitor : public ValueObject {
  protected:
   void VisitPhis(HBasicBlock* block);
   void VisitNonPhiInstructions(HBasicBlock* block);
+  void VisitNonPhiInstructionsHandleChanges(HBasicBlock* block);
 
   OptimizingCompilerStats* stats_;
 

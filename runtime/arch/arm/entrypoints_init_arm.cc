@@ -28,6 +28,7 @@
 #include "entrypoints/quick/runtime_entrypoints_list.h"
 #include "entrypoints/runtime_asm_entrypoints.h"
 #include "interpreter/interpreter.h"
+#include "trace_profile.h"
 
 namespace art HIDDEN {
 
@@ -197,7 +198,7 @@ void InitEntryPoints(JniEntryPoints* jpoints,
 }
 
 void UpdateLowOverheadTraceEntrypoints([[maybe_unused]] QuickEntryPoints* qpoints,
-                                       [[maybe_unused]] bool enable) {
+                                       [[maybe_unused]] LowOverheadTraceType trace_type) {
   // This is a nop on this architecture. Low overhead tracing is only implemented for ARM64.
 }
 

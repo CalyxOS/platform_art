@@ -16,7 +16,7 @@
 
 .super Ljava/lang/Object;
 
-## CHECK-START: int TestCase.withBranch(boolean) select_generator (before)
+## CHECK-START: int TestCase.withBranch(boolean) control_flow_simplifier (before)
 ## CHECK: If true_count:2 false_count:1
 .method public static withBranch(Z)I
   .registers 2

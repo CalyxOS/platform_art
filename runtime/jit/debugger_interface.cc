@@ -428,11 +428,7 @@ void AddNativeDebugInfoForDex(Thread* self, const DexFile* dexfile) {
   DCHECK(dexfile != nullptr);
   // Container dex files (v41) may store data past the size defined in the header.
   uint32_t size = dexfile->SizeIncludingSharedData();
-  if (dexfile->IsCompactDexFile()) {
-    // Compact dex files may store data past the size defined in the header.
-    const DexFile::Header& header = dexfile->GetHeader();
-    size = std::max(size, header.data_off_ + header.data_size_);
-  }
+  CHECK(!dexfile->IsCompactDexFile());
   const ArrayRef<const uint8_t> symfile(dexfile->Begin(), size);
   CreateJITCodeEntryInternal<DexNativeInfo>(symfile);
 }

@@ -37,7 +37,7 @@ public class TestCompare {
     }
   }
 
-  /// CHECK-START: int TestCompare.compareBooleans(boolean, boolean) select_generator (after)
+  /// CHECK-START: int TestCompare.compareBooleans(boolean, boolean) control_flow_simplifier (after)
   /// CHECK-NOT:                     Phi
 
   /// CHECK-START: int TestCompare.compareBooleans(boolean, boolean) instruction_simplifier$before_codegen (after)
@@ -64,7 +64,7 @@ public class TestCompare {
   ///  CHECK-START: int TestCompare.compareBooleans2(boolean, boolean) builder (after)
   ///  CHECK-NOT:                     InvokeStaticOrDirect
 
-  ///  CHECK-START: int TestCompare.compareBooleans2(boolean, boolean) select_generator (after)
+  ///  CHECK-START: int TestCompare.compareBooleans2(boolean, boolean) control_flow_simplifier (after)
   ///  CHECK:         <<ArgX:z\d+>>   ParameterValue
   ///  CHECK:         <<ArgY:z\d+>>   ParameterValue
   ///  CHECK-DAG:     <<Zero:i\d+>>   IntConstant 0
@@ -74,7 +74,7 @@ public class TestCompare {
   ///  CHECK-DAG:     <<Result:i\d+>> Compare [<<SelX>>,<<SelY>>]
   ///  CHECK-DAG:                     Return [<<Result>>]
 
-  ///  CHECK-START: int TestCompare.compareBooleans2(boolean, boolean) select_generator (after)
+  ///  CHECK-START: int TestCompare.compareBooleans2(boolean, boolean) control_flow_simplifier (after)
   ///  CHECK-NOT:                     Phi
 
   ///  CHECK-START: int TestCompare.compareBooleans2(boolean, boolean) instruction_simplifier$before_codegen (after)

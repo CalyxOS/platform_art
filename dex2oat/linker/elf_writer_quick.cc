@@ -170,6 +170,7 @@ void ElfWriterQuick<ElfTypes>::Start() {
     builder_->GetBuildId()->AllocateVirtualMemory(builder_->GetBuildId()->GetSize());
     builder_->WriteBuildIdSection();
   }
+  builder_->ReserveSpaceForDynamicSection(elf_file_->GetPath());
 }
 
 template <typename ElfTypes>

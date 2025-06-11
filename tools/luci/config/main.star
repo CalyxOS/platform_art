@@ -47,7 +47,6 @@ luci.project(
     scheduler = "luci-scheduler.appspot.com",
     swarming = "chromium-swarm.appspot.com",
     acls = [
-        # Publicly readable.
         acl.entry(
             roles = [
                 acl.BUILDBUCKET_READER,
@@ -55,7 +54,7 @@ luci.project(
                 acl.PROJECT_CONFIGS_READER,
                 acl.SCHEDULER_READER,
             ],
-            groups = "all",
+            groups = "googlers",
         ),
         acl.entry(
             roles = [
@@ -76,7 +75,7 @@ luci.project(
         ),
         luci.binding(
             roles = "role/swarming.poolViewer",
-            groups = "all",
+            groups = "googlers",
         ),
     ],
 )
@@ -239,7 +238,7 @@ def add_builder(mode,
 
     # Create builder name based on the configuaration parameters.
     name = mode + '.' + arch
-    name += '.gsctress' if gcstress else ''
+    name += '.gcstress' if gcstress else ''
     name += '.poison' if poison else ''
     name += '.ngen' if ngen else ''
     name += '.cmc' if cmc else ''
@@ -253,6 +252,7 @@ def add_builder(mode,
     category = name.replace(".", "|")
     category = category.replace("host|", "host.")
     category = category.replace("target|", "target.")
+    category = category.replace("gcstress|cmc", "gcstress-cmc")
 
     product = None
     if arch == "arm":
@@ -263,13 +263,13 @@ def add_builder(mode,
     dimensions = {"os": "Android" if mode == "target" else "Ubuntu"}
     if mode == "target":
       if cmc:
-        # Request devices running Android 24Q3 (`AP1A` builds) for
+        # Request devices running at least Android 24Q3 (`AP1A` builds) for
         # (`userfaultfd`-based) Concurrent Mark-Compact GC configurations.
         # Currently (as of 2024-08-22), the only devices within the device pool
         # allocated to ART that are running `AP1A` builds are Pixel 6 devices
         # (all other device types are running older Android versions), which are
         # also the only device model supporting `userfaultfd` among that pool.
-        dimensions |= {"device_os": "A"}
+        dimensions |= {"device_os": "A|B"}
       else:
         # Run all other configurations on Android S since it is the oldest we support.
         # Other than the `AP1A` builds above, all other devices are flashed to `SP2A`.
@@ -321,6 +321,7 @@ def add_builders():
       add_builder(mode, arch, bitness, cmc=True)
       add_builder(mode, arch, bitness, poison=True)
       add_builder(mode, arch, bitness, gcstress=True)
+      add_builder(mode, arch, bitness, cmc=True, gcstress=True)
   add_builder('qemu', 'arm', bitness=64)
   add_builder('qemu', 'riscv', bitness=64)
 

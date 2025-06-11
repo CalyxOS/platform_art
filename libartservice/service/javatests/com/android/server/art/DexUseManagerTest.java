@@ -37,7 +37,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Binder;
 import android.os.Environment;
-import android.os.Process;
 import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.os.storage.StorageManager;
@@ -92,7 +91,7 @@ public class DexUseManagerTest {
 
     @Rule
     public StaticMockitoRule mockitoRule = new StaticMockitoRule(
-            SystemProperties.class, Constants.class, Process.class, ArtJni.class);
+            SystemProperties.class, Constants.class, ArtJni.class);
 
     private final UserHandle mUserHandle = UserHandle.of(1);
 
@@ -128,8 +127,6 @@ public class DexUseManagerTest {
         lenient().when(Constants.getPreferredAbi()).thenReturn("arm64-v8a");
         lenient().when(Constants.getNative64BitAbi()).thenReturn("arm64-v8a");
         lenient().when(Constants.getNative32BitAbi()).thenReturn("armeabi-v7a");
-
-        lenient().when(Process.isIsolatedUid(anyInt())).thenReturn(false);
 
         // Use a LinkedHashMap so that we can control the iteration order.
         mPackageStates = new LinkedHashMap<>();
@@ -191,6 +188,7 @@ public class DexUseManagerTest {
         lenient().when(mInjector.getPackageManagerLocal()).thenReturn(mPackageManagerLocal);
         lenient().when(mInjector.getCallingUserHandle()).thenReturn(mUserHandle);
         lenient().when(mInjector.getCallingUid()).thenReturn(110001);
+        lenient().when(mInjector.isIsolatedUid(anyInt())).thenReturn(false);
         lenient()
                 .when(mInjector.getMaxSecondaryDexFilesPerOwner())
                 .thenReturn(MAX_SECONDARY_DEX_FILES_PER_OWNER_FOR_TESTING);
@@ -215,7 +213,7 @@ public class DexUseManagerTest {
 
     @Test
     public void testPrimaryDexOwnedIsolated() {
-        when(Process.isIsolatedUid(anyInt())).thenReturn(true);
+        when(mInjector.isIsolatedUid(anyInt())).thenReturn(true);
         mDexUseManager.notifyDexContainersLoaded(
                 mSnapshot, OWNING_PKG_NAME, Map.of(BASE_APK, "CLC"));
 
@@ -230,7 +228,7 @@ public class DexUseManagerTest {
 
     @Test
     public void testPrimaryDexOwnedSplitIsolated() {
-        when(Process.isIsolatedUid(anyInt())).thenReturn(true);
+        when(mInjector.isIsolatedUid(anyInt())).thenReturn(true);
         mDexUseManager.notifyDexContainersLoaded(
                 mSnapshot, OWNING_PKG_NAME, Map.of(SPLIT_APK, "CLC"));
 
@@ -324,7 +322,7 @@ public class DexUseManagerTest {
         mDexUseManager.notifyDexContainersLoaded(
                 mSnapshot, LOADING_PKG_NAME, Map.of(BASE_APK, "CLC"));
 
-        when(Process.isIsolatedUid(anyInt())).thenReturn(true);
+        when(mInjector.isIsolatedUid(anyInt())).thenReturn(true);
         mDexUseManager.notifyDexContainersLoaded(
                 mSnapshot, OWNING_PKG_NAME, Map.of(BASE_APK, "CLC"));
         when(mInjector.getCurrentTimeMillis()).thenReturn(2000l);
@@ -374,7 +372,7 @@ public class DexUseManagerTest {
 
     @Test
     public void testSecondaryDexOwnedIsolated() {
-        when(Process.isIsolatedUid(anyInt())).thenReturn(true);
+        when(mInjector.isIsolatedUid(anyInt())).thenReturn(true);
         mDexUseManager.notifyDexContainersLoaded(
                 mSnapshot, OWNING_PKG_NAME, Map.of(mDeDir + "/foo.apk", "CLC"));
 
@@ -536,7 +534,7 @@ public class DexUseManagerTest {
         mDexUseManager.notifyDexContainersLoaded(mSnapshot, OWNING_PKG_NAME,
                 Map.of(mCeDir + "/baz.apk", SecondaryDexInfo.UNSUPPORTED_CLASS_LOADER_CONTEXT));
 
-        when(Process.isIsolatedUid(anyInt())).thenReturn(true);
+        when(mInjector.isIsolatedUid(anyInt())).thenReturn(true);
         mDexUseManager.notifyDexContainersLoaded(
                 mSnapshot, OWNING_PKG_NAME, Map.of(mCeDir + "/foo.apk", "CLC"));
         when(mInjector.getCurrentTimeMillis()).thenReturn(2000l);
@@ -625,7 +623,7 @@ public class DexUseManagerTest {
         mDexUseManager.notifyDexContainersLoaded(
                 mSnapshot, LOADING_PKG_NAME, Map.of(mCeDir + "/foo.apk", "CLC"));
 
-        when(Process.isIsolatedUid(anyInt())).thenReturn(true);
+        when(mInjector.isIsolatedUid(anyInt())).thenReturn(true);
         mDexUseManager.notifyDexContainersLoaded(
                 mSnapshot, OWNING_PKG_NAME, Map.of(mCeDir + "/foo.apk", "CLC"));
 
@@ -673,7 +671,7 @@ public class DexUseManagerTest {
         mDexUseManager.notifyDexContainersLoaded(
                 mSnapshot, LOADING_PKG_NAME, Map.of(mCeDir + "/foo.apk", "CLC"));
 
-        when(Process.isIsolatedUid(anyInt())).thenReturn(true);
+        when(mInjector.isIsolatedUid(anyInt())).thenReturn(true);
         mDexUseManager.notifyDexContainersLoaded(
                 mSnapshot, OWNING_PKG_NAME, Map.of(mCeDir + "/foo.apk", "CLC"));
 

@@ -512,6 +512,8 @@ class HGraphVisualizerPrinter final : public HGraphDelegateVisitor {
 
   void VisitCondition(HCondition* condition) override {
     StartAttributeStream("bias") << condition->GetBias();
+    StartAttributeStream("emitted_at_use_site")
+        << std::boolalpha << condition->IsEmittedAtUseSite() << std::noboolalpha;
   }
 
   void VisitIf(HIf* if_instr) override {

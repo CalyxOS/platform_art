@@ -221,6 +221,8 @@ struct TraceConfig {
   TraceClockSource clock_source;
 };
 
+extern bool ShouldUseGenerationalGC();
+
 namespace {
 
 #ifdef __APPLE__
@@ -280,7 +282,7 @@ Runtime::Runtime()
       abort_(nullptr),
       stats_enabled_(false),
       is_running_on_memory_tool_(kRunningOnMemoryTool),
-      instrumentation_(),
+      instrumentation_(new instrumentation::Instrumentation()),
       main_thread_group_(nullptr),
       system_thread_group_(nullptr),
       system_class_loader_(nullptr),
@@ -1323,7 +1325,6 @@ void Runtime::InitNonZygoteOrPostFork(
     if (!odrefresh::UploadStatsIfAvailable(&err)) {
       LOG(WARNING) << "Failed to upload odrefresh metrics: " << err;
     }
-    metrics::SetupCallbackForDeviceStatus();
     metrics::ReportDeviceMetrics();
   }
 
@@ -1437,6 +1438,40 @@ static inline void CreatePreAllocatedException(Thread* self,
       throwable->FindDeclaredInstanceField("detailMessage", "Ljava/lang/String;");
   CHECK(detailMessageField != nullptr);
   detailMessageField->SetObject</* kTransactionActive= */ false>(exception->Read(), message);
+}
+
+inline void Runtime::CreatePreAllocatedExceptions(Thread* self) {
+  // Pre-allocate an OutOfMemoryError for the case when we fail to
+  // allocate the exception to be thrown.
+  CreatePreAllocatedException(self,
+                              this,
+                              &pre_allocated_OutOfMemoryError_when_throwing_exception_,
+                              "Ljava/lang/OutOfMemoryError;",
+                              "OutOfMemoryError thrown while trying to throw an exception; "
+                              "no stack trace available");
+  // Pre-allocate an OutOfMemoryError for the double-OOME case.
+  CreatePreAllocatedException(self,
+                              this,
+                              &pre_allocated_OutOfMemoryError_when_throwing_oome_,
+                              "Ljava/lang/OutOfMemoryError;",
+                              "OutOfMemoryError thrown while trying to throw OutOfMemoryError; "
+                              "no stack trace available");
+  // Pre-allocate an OutOfMemoryError for the case when we fail to
+  // allocate while handling a stack overflow.
+  CreatePreAllocatedException(self,
+                              this,
+                              &pre_allocated_OutOfMemoryError_when_handling_stack_overflow_,
+                              "Ljava/lang/OutOfMemoryError;",
+                              "OutOfMemoryError thrown while trying to handle a stack overflow; "
+                              "no stack trace available");
+  // Pre-allocate a NoClassDefFoundError for the common case of failing to find a system class
+  // ahead of checking the application's class loader.
+  CreatePreAllocatedException(self,
+                              this,
+                              &pre_allocated_NoClassDefFoundError_,
+                              "Ljava/lang/NoClassDefFoundError;",
+                              "Class not found using the boot class loader; "
+                              "no stack trace available");
 }
 
 std::string Runtime::GetApexVersions(ArrayRef<const std::string> boot_class_path_locations) {
@@ -1743,7 +1778,8 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   XGcOption xgc_option = runtime_options.GetOrDefault(Opt::GcOption);
 
   // Generational CC collection is currently only compatible with Baker read barriers.
-  bool use_generational_cc = kUseBakerReadBarrier && xgc_option.generational_cc;
+  bool use_generational_gc = (kUseBakerReadBarrier || gUseUserfaultfd) &&
+                             xgc_option.generational_gc && ShouldUseGenerationalGC();
 
   // Cache the apex versions.
   InitializeApexVersions();
@@ -1792,7 +1828,7 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
                        xgc_option.gcstress_,
                        xgc_option.measure_,
                        runtime_options.GetOrDefault(Opt::EnableHSpaceCompactForOOM),
-                       use_generational_cc,
+                       use_generational_gc,
                        runtime_options.GetOrDefault(Opt::HSpaceCompactForOOMMinIntervalsMs),
                        runtime_options.Exists(Opt::DumpRegionInfoBeforeGC),
                        runtime_options.Exists(Opt::DumpRegionInfoAfterGC));
@@ -1888,6 +1924,12 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
       // Keep the defaults.
       break;
   }
+
+#ifdef ART_USE_RESTRICTED_MODE
+  // TODO(Simulator): support signal handling and implicit checks.
+  implicit_suspend_checks_ = false;
+  implicit_null_checks_ = false;
+#endif  // ART_USE_RESTRICTED_MODE
 
   fault_manager.Init(!no_sig_chain_);
   if (!no_sig_chain_) {
@@ -2073,38 +2115,7 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
     DCHECK(pre_allocated_NoClassDefFoundError_.Read()->GetClass()
                ->DescriptorEquals("Ljava/lang/NoClassDefFoundError;"));
   } else {
-    // Pre-allocate an OutOfMemoryError for the case when we fail to
-    // allocate the exception to be thrown.
-    CreatePreAllocatedException(self,
-                                this,
-                                &pre_allocated_OutOfMemoryError_when_throwing_exception_,
-                                "Ljava/lang/OutOfMemoryError;",
-                                "OutOfMemoryError thrown while trying to throw an exception; "
-                                    "no stack trace available");
-    // Pre-allocate an OutOfMemoryError for the double-OOME case.
-    CreatePreAllocatedException(self,
-                                this,
-                                &pre_allocated_OutOfMemoryError_when_throwing_oome_,
-                                "Ljava/lang/OutOfMemoryError;",
-                                "OutOfMemoryError thrown while trying to throw OutOfMemoryError; "
-                                    "no stack trace available");
-    // Pre-allocate an OutOfMemoryError for the case when we fail to
-    // allocate while handling a stack overflow.
-    CreatePreAllocatedException(self,
-                                this,
-                                &pre_allocated_OutOfMemoryError_when_handling_stack_overflow_,
-                                "Ljava/lang/OutOfMemoryError;",
-                                "OutOfMemoryError thrown while trying to handle a stack overflow; "
-                                    "no stack trace available");
-
-    // Pre-allocate a NoClassDefFoundError for the common case of failing to find a system class
-    // ahead of checking the application's class loader.
-    CreatePreAllocatedException(self,
-                                this,
-                                &pre_allocated_NoClassDefFoundError_,
-                                "Ljava/lang/NoClassDefFoundError;",
-                                "Class not found using the boot class loader; "
-                                    "no stack trace available");
+    CreatePreAllocatedExceptions(self);
   }
 
   // Class-roots are setup, we can now finish initializing the JniIdManager.
@@ -2447,8 +2458,8 @@ void Runtime::DumpDeoptimizations(std::ostream& os) {
   }
 }
 
-std::optional<uint64_t> Runtime::SiqQuitNanoTime() const {
-  return signal_catcher_ != nullptr ? signal_catcher_->SiqQuitNanoTime() : std::nullopt;
+std::optional<uint64_t> Runtime::SigQuitNanoTime() const {
+  return signal_catcher_ != nullptr ? signal_catcher_->SigQuitNanoTime() : std::nullopt;
 }
 
 void Runtime::DumpForSigQuit(std::ostream& os) {
@@ -3210,21 +3221,21 @@ class DeoptimizeBootImageClassVisitor : public ClassVisitor {
       if (Runtime::Current()->GetHeap()->IsInBootImageOatFile(code) &&
           (!m.IsNative() || deoptimize_native_methods) &&
           !m.IsProxyMethod()) {
-        instrumentation_->InitializeMethodsCode(&m, /*aot_code=*/ nullptr);
+        instrumentation_->ReinitializeMethodsCode(&m);
       }
 
       if (Runtime::Current()->GetJit() != nullptr &&
           Runtime::Current()->GetJit()->GetCodeCache()->IsInZygoteExecSpace(code) &&
           (!m.IsNative() || deoptimize_native_methods)) {
         DCHECK(!m.IsProxyMethod());
-        instrumentation_->InitializeMethodsCode(&m, /*aot_code=*/ nullptr);
+        instrumentation_->ReinitializeMethodsCode(&m);
       }
 
       if (m.IsPreCompiled()) {
         // Precompilation is incompatible with debuggable, so clear the flag
         // and update the entrypoint in case it has been compiled.
         m.ClearPreCompiled();
-        instrumentation_->InitializeMethodsCode(&m, /*aot_code=*/ nullptr);
+        instrumentation_->ReinitializeMethodsCode(&m);
       }
 
       // Clear MemorySharedAccessFlags so the boot class methods can be JITed better.
@@ -3503,12 +3514,6 @@ void Runtime::DCheckNoTransactionCheckAllowed() {
       self->AssertNoTransactionCheckAllowed();
     }
   }
-}
-
-NO_INLINE void Runtime::AllowPageSizeAccess() {
-#ifdef ART_PAGE_SIZE_AGNOSTIC
-  gPageSize.AllowAccess();
-#endif
 }
 
 }  // namespace art

@@ -30,10 +30,9 @@
 #include <memory>
 #include <sstream>
 
+#include "allocator.h"
 #include "android-base/stringprintf.h"
 #include "android-base/unique_fd.h"
-
-#include "allocator.h"
 #include "bit_utils.h"
 #include "globals.h"
 #include "logging.h"  // For VLOG_IS_ON.
@@ -346,15 +345,18 @@ MemMap MemMap::MapAnonymous(const char* name,
 
   void* actual = nullptr;
 
-  // New Ubuntu linux kerners seem to ignore the address hint, so make it a firm request.
-  // Whereas old kernels allocated at 'addr' if provided, newer kernels seem to ignore it.
-  // However, MAP_FIXED_NOREPLACE tells the kernel it must allocate at the address or fail.
-  // Do this only on host since android kernels still obey the hint without flag (for now).
-  if (!kIsTargetBuild && (flags & MAP_FIXED) == 0 && addr != nullptr) {
+#if defined(__linux__)
+  // Recent kernels have a bug where the address hint might be ignored.
+  // See https://lore.kernel.org/all/20241115215256.578125-1-kaleshsingh@google.com/
+  // We use MAP_FIXED_NOREPLACE to tell the kernel it must allocate at the address or fail.
+  // If the fixed-address allocation fails, we fallback to the default path (random address).
+  // Therefore, non-null 'addr' still behaves as hint-only as far as ART api is concerned.
+  if ((flags & MAP_FIXED) == 0 && addr != nullptr && IsKernelVersionAtLeast(4, 17)) {
     actual = MapInternal(
         addr, page_aligned_byte_count, prot, flags | MAP_FIXED_NOREPLACE, fd.get(), 0, low_4gb);
-    // If the fixed-address allocation failed, fallback to the default path (random address).
   }
+#endif  // __linux__
+
   if (actual == nullptr || actual == MAP_FAILED) {
     actual = MapInternal(addr, page_aligned_byte_count, prot, flags, fd.get(), 0, low_4gb);
   }

@@ -24,6 +24,7 @@
 
 #if defined(__BIONIC__)
 #include <android/fdsan.h>
+#include <android/api-level.h>
 #endif
 
 #if defined(_WIN32)
@@ -35,6 +36,7 @@
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
+#include <android-base/properties.h>
 
 // Includes needed for FdFile::Copy().
 #include "base/globals.h"
@@ -48,6 +50,23 @@
 #endif
 
 namespace unix_file {
+
+// f2fs decompress issue.
+static bool b376814207() {
+#ifdef __BIONIC__
+  if (android_get_device_api_level() >= 35) {
+    return false;
+  }
+#endif
+  std::string property = android::base::GetProperty("ro.product.build.fingerprint", "");
+  return property.starts_with("samsung");
+}
+
+// Used to work around kernel bugs.
+bool AllowSparseFiles() {
+  static bool allow = !b376814207();
+  return allow;
+}
 
 #if defined(_WIN32)
 // RAII wrapper for an event object to allow asynchronous I/O to correctly signal completion.
@@ -534,7 +553,7 @@ bool FdFile::SparseWrite(const uint8_t* data,
                          size_t size,
                          const std::vector<uint8_t>& zeroes) {
   DCHECK_GE(zeroes.size(), size);
-  if (memcmp(zeroes.data(), data, size) == 0) {
+  if (memcmp(zeroes.data(), data, size) == 0 && AllowSparseFiles()) {
     // These bytes are all zeroes, skip them by moving the file offset via lseek SEEK_CUR (available
     // since linux kernel 3.1).
     if (TEMP_FAILURE_RETRY(lseek(Fd(), size, SEEK_CUR)) < 0) {

@@ -133,6 +133,8 @@ enum NativeBridgeImplementationVersion {
   PRE_ZYGOTE_FORK_VERSION = 6,
   // The version with critical_native support
   CRITICAL_NATIVE_SUPPORT_VERSION = 7,
+  // The version with native bridge detection fallback for function pointers
+  IDENTIFY_NATIVELY_BRIDGED_FUNCTION_POINTERS_VERSION = 8,
 };
 
 // Whether we had an error at some point.
@@ -730,6 +732,18 @@ void* NativeBridgeLoadLibraryExt(const char* libpath, int flag, native_bridge_na
     }
   }
   return nullptr;
+}
+
+bool NativeBridgeIsNativeBridgeFunctionPointer(const void* method) {
+  if (NativeBridgeInitialized()) {
+    if (isCompatibleWith(IDENTIFY_NATIVELY_BRIDGED_FUNCTION_POINTERS_VERSION)) {
+      return callbacks->isNativeBridgeFunctionPointer(method);
+    } else {
+      ALOGW("not compatible with version %d, unable to call isNativeBridgeFunctionPointer",
+            IDENTIFY_NATIVELY_BRIDGED_FUNCTION_POINTERS_VERSION);
+    }
+  }
+  return false;
 }
 
 }  // extern "C"

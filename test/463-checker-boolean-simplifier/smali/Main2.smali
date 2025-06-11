@@ -31,7 +31,7 @@
 # Elementary test negating a boolean. Verifies that blocks are merged and
 # empty branches removed.
 
-## CHECK-START: boolean Main2.BooleanNot(boolean) select_generator (before)
+## CHECK-START: boolean Main2.BooleanNot(boolean) control_flow_simplifier (before)
 ## CHECK-DAG:     <<Param:z\d+>>    ParameterValue
 ## CHECK-DAG:     <<Const0:i\d+>>   IntConstant 0
 ## CHECK-DAG:     <<Const1:i\d+>>   IntConstant 1
@@ -39,24 +39,24 @@
 ## CHECK-DAG:     <<Phi:i\d+>>      Phi [<<Const1>>,<<Const0>>]
 ## CHECK-DAG:                       Return [<<Phi>>]
 
-## CHECK-START: boolean Main2.BooleanNot(boolean) select_generator (before)
+## CHECK-START: boolean Main2.BooleanNot(boolean) control_flow_simplifier (before)
 ## CHECK:                           Goto
 ## CHECK:                           Goto
 ## CHECK:                           Goto
 ## CHECK-NOT:                       Goto
 
-## CHECK-START: boolean Main2.BooleanNot(boolean) select_generator (after)
+## CHECK-START: boolean Main2.BooleanNot(boolean) control_flow_simplifier (after)
 ## CHECK-DAG:     <<Param:z\d+>>    ParameterValue
 ## CHECK-DAG:     <<Const0:i\d+>>   IntConstant 0
 ## CHECK-DAG:     <<Const1:i\d+>>   IntConstant 1
 ## CHECK-DAG:     <<NotParam:i\d+>> Select [<<Const1>>,<<Const0>>,<<Param>>]
 ## CHECK-DAG:                       Return [<<NotParam>>]
 
-## CHECK-START: boolean Main2.BooleanNot(boolean) select_generator (after)
+## CHECK-START: boolean Main2.BooleanNot(boolean) control_flow_simplifier (after)
 ## CHECK-NOT:                       If
 ## CHECK-NOT:                       Phi
 
-## CHECK-START: boolean Main2.BooleanNot(boolean) select_generator (after)
+## CHECK-START: boolean Main2.BooleanNot(boolean) control_flow_simplifier (after)
 ## CHECK:                           Goto
 ## CHECK-NOT:                       Goto
 
@@ -86,7 +86,7 @@
 # Program which further uses negated conditions.
 # Note that Phis are discovered retrospectively.
 
-## CHECK-START: boolean Main2.ValuesOrdered(int, int, int) select_generator (before)
+## CHECK-START: boolean Main2.ValuesOrdered(int, int, int) control_flow_simplifier (before)
 ## CHECK-DAG:     <<ParamX:i\d+>>   ParameterValue
 ## CHECK-DAG:     <<ParamY:i\d+>>   ParameterValue
 ## CHECK-DAG:     <<ParamZ:i\d+>>   ParameterValue
@@ -103,7 +103,7 @@
 ## CHECK-DAG:     <<PhiYZ>>         Phi [<<Const1>>,<<Const0>>]
 ## CHECK-DAG:     <<PhiXYZ>>        Phi [<<Const1>>,<<Const0>>]
 
-## CHECK-START: boolean Main2.ValuesOrdered(int, int, int) select_generator (after)
+## CHECK-START: boolean Main2.ValuesOrdered(int, int, int) control_flow_simplifier (after)
 ## CHECK-DAG:     <<ParamX:i\d+>>   ParameterValue
 ## CHECK-DAG:     <<ParamY:i\d+>>   ParameterValue
 ## CHECK-DAG:     <<ParamZ:i\d+>>   ParameterValue
@@ -164,7 +164,7 @@
     goto :goto_a
 .end method
 
-## CHECK-START: int Main2.NegatedCondition(boolean) select_generator (before)
+## CHECK-START: int Main2.NegatedCondition(boolean) control_flow_simplifier (before)
 ## CHECK-DAG:     <<Param:z\d+>>    ParameterValue
 ## CHECK-DAG:     <<Const42:i\d+>>  IntConstant 42
 ## CHECK-DAG:     <<Const43:i\d+>>  IntConstant 43
@@ -172,14 +172,14 @@
 ## CHECK-DAG:     <<Phi:i\d+>>      Phi [<<Const42>>,<<Const43>>]
 ## CHECK-DAG:                       Return [<<Phi>>]
 
-## CHECK-START: int Main2.NegatedCondition(boolean) select_generator (after)
+## CHECK-START: int Main2.NegatedCondition(boolean) control_flow_simplifier (after)
 ## CHECK-DAG:     <<Param:z\d+>>    ParameterValue
 ## CHECK-DAG:     <<Const42:i\d+>>  IntConstant 42
 ## CHECK-DAG:     <<Const43:i\d+>>  IntConstant 43
 ## CHECK-DAG:     <<Select:i\d+>>   Select [<<Const43>>,<<Const42>>,<<Param>>]
 ## CHECK-DAG:                       Return [<<Select>>]
 
-## CHECK-START: int Main2.NegatedCondition(boolean) select_generator (after)
+## CHECK-START: int Main2.NegatedCondition(boolean) control_flow_simplifier (after)
 ## CHECK-NOT:                       BooleanNot
 
 # The original java source of this method:
@@ -214,7 +214,7 @@
 # This test currently checks that we don't perform select generation due to
 # having multiple phis.
 
-## CHECK-START: int Main2.MultiplePhis() select_generator (before)
+## CHECK-START: int Main2.MultiplePhis() control_flow_simplifier (before)
 ## CHECK-DAG:     <<Const0:i\d+>>   IntConstant 0
 ## CHECK-DAG:     <<Const1:i\d+>>   IntConstant 1
 ## CHECK-DAG:     <<Const13:i\d+>>  IntConstant 13
@@ -226,16 +226,16 @@
 ## CHECK-DAG:                       If [<<Cond>>]
 ## CHECK-DAG:                       Return [<<PhiX>>]
 
-## CHECK-START: int Main2.MultiplePhis() select_generator (after)
+## CHECK-START: int Main2.MultiplePhis() control_flow_simplifier (after)
 ## CHECK-DAG:     <<Const0:i\d+>>   IntConstant 0
 ## CHECK-DAG:     <<Const1:i\d+>>   IntConstant 1
 ## CHECK-DAG:     <<Const13:i\d+>>  IntConstant 13
 ## CHECK-DAG:     <<Const42:i\d+>>  IntConstant 42
-## CHECK-DAG:     <<PhiX:i\d+>>     Phi [<<Const0>>,<<Const13>>,<<Const42>>]
-## CHECK-DAG:     <<PhiY:i\d+>>     Phi [<<Const1>>,<<Add:i\d+>>,<<Add>>]
+## CHECK-DAG:     <<PhiX:i\d+>>     Phi [<<Const0>>,<<Select:i\d+>>]
+## CHECK-DAG:     <<PhiY:i\d+>>     Phi [<<Const1>>,<<Add:i\d+>>]
 ## CHECK-DAG:     <<Add>>           Add [<<PhiY>>,<<Const1>>]
 ## CHECK-DAG:     <<Cond:z\d+>>     LessThanOrEqual [<<Add>>,<<Const1>>]
-## CHECK-DAG:                       If [<<Cond>>]
+## CHECK-DAG:     <<Select>>        Select [<<Const13>>,<<Const42>>,<<Cond>>]
 ## CHECK-DAG:                       Return [<<PhiX>>]
 
 # The original java source of this method:

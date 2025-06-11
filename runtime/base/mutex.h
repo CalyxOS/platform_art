@@ -526,9 +526,10 @@ class SCOPED_CAPABILITY MutexLock {
 
 // Pretend to acquire a mutex for checking purposes, without actually doing so. Use with
 // extreme caution when it is known the condition that the mutex would guard against cannot arise.
+template <typename T>
 class SCOPED_CAPABILITY FakeMutexLock {
  public:
-  explicit FakeMutexLock(Mutex& mu) ACQUIRE(mu) NO_THREAD_SAFETY_ANALYSIS {}
+  explicit FakeMutexLock(T& mu) ACQUIRE(mu) NO_THREAD_SAFETY_ANALYSIS {}
 
   ~FakeMutexLock() RELEASE() NO_THREAD_SAFETY_ANALYSIS {}
 

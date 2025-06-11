@@ -17,3 +17,6 @@
 
 def run(ctx, args):
   ctx.default_run(args, jvmti=True)
+
+  # Ignore hiddenapi's denial errors which go to stderr on host and qemu (but not on device).
+  ctx.run(fr"sed -i -E '/ E dalvikvm.* hiddenapi: /d' '{args.stderr_file}'")

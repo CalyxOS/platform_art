@@ -39,9 +39,9 @@ static constexpr char kMethodFlagStringStartup = 'S';
 static constexpr char kMethodFlagStringPostStartup = 'P';
 
 // Returns the type descriptor of the given reference.
-static std::string GetTypeDescriptor(const TypeReference& ref) {
+static std::string_view GetTypeDescriptorView(const TypeReference& ref) {
   const dex::TypeId& type_id = ref.dex_file->GetTypeId(ref.TypeIndex());
-  return ref.dex_file->GetTypeDescriptor(type_id);
+  return ref.dex_file->GetTypeDescriptorView(type_id);
 }
 
 // Returns the method representation used in the text format of the boot image profile.
@@ -49,8 +49,8 @@ static std::string BootImageRepresentation(const MethodReference& ref) {
   const DexFile* dex_file = ref.dex_file;
   const dex::MethodId& id = ref.GetMethodId();
   std::string signature_string(dex_file->GetMethodSignature(id).ToString());
-  std::string type_string(dex_file->GetTypeDescriptor(dex_file->GetTypeId(id.class_idx_)));
-  std::string method_name(dex_file->GetMethodName(id));
+  std::string type_string(dex_file->GetTypeDescriptorView(dex_file->GetTypeId(id.class_idx_)));
+  std::string method_name(dex_file->GetMethodNameView(id));
   return type_string +
         kMethodSep +
         method_name +
@@ -59,13 +59,13 @@ static std::string BootImageRepresentation(const MethodReference& ref) {
 
 // Returns the class representation used in the text format of the boot image profile.
 static std::string BootImageRepresentation(const TypeReference& ref) {
-  return GetTypeDescriptor(ref);
+  return std::string(GetTypeDescriptorView(ref));
 }
 
 // Returns the class representation used in preloaded classes.
 static std::string PreloadedClassesRepresentation(const TypeReference& ref) {
-  std::string descriptor = GetTypeDescriptor(ref);
-  return DescriptorToDot(descriptor.c_str());
+  std::string_view descriptor = GetTypeDescriptorView(ref);
+  return DescriptorToDot(descriptor);
 }
 
 // Formats the list of packages from the item metadata as a debug string.

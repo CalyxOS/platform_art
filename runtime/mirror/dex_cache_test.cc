@@ -85,14 +85,16 @@ TEST_F(DexCacheTest, TestResolvedFieldAccess) {
   ASSERT_TRUE(klass2 != nullptr);
   EXPECT_OBJ_PTR_EQ(klass1->GetDexCache(), klass2->GetDexCache());
 
-  EXPECT_NE(klass1->NumStaticFields(), 0u);
-  for (ArtField& field : klass2->GetSFields()) {
-    EXPECT_FALSE(
-        klass1->ResolvedFieldAccessTest</*throw_on_failure=*/ false>(
-            klass2.Get(),
-            &field,
-            klass1->GetDexCache(),
-            field.GetDexFieldIndex()));
+  EXPECT_NE(klass1->ComputeNumStaticFields(), 0u);
+  for (ArtField& field : klass2->GetFields()) {
+    if (field.IsStatic()) {
+      EXPECT_FALSE(
+          klass1->ResolvedFieldAccessTest</*throw_on_failure=*/ false>(
+              klass2.Get(),
+              &field,
+              klass1->GetDexCache(),
+              field.GetDexFieldIndex()));
+    }
   }
 }
 

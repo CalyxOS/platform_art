@@ -30,23 +30,15 @@ TEST_ART_RUN_TEST_DEPENDENCIES := \
 # images (all images as we sync only once).
 ART_TEST_TARGET_RUN_TEST_DEPENDENCIES := $(TESTING_ART_APEX) $(TARGET_CORE_IMG_OUTS)
 
-# Also need libartagent.
-ART_TEST_TARGET_RUN_TEST_DEPENDENCIES += libartagent-target libartagentd-target
-
-# Also need libtiagent.
-ART_TEST_TARGET_RUN_TEST_DEPENDENCIES += libtiagent-target libtiagentd-target
-
-# Also need libtistress.
-ART_TEST_TARGET_RUN_TEST_DEPENDENCIES += libtistress-target libtistressd-target
-
-# Also need libarttest.
-ART_TEST_TARGET_RUN_TEST_DEPENDENCIES += libarttest-target libarttestd-target
-
-# Also need libnativebridgetest.
-ART_TEST_TARGET_RUN_TEST_DEPENDENCIES += libnativebridgetest-target libnativebridgetestd-target
-
-# Also need signal_dumper.
-ART_TEST_TARGET_RUN_TEST_DEPENDENCIES += signal_dumper-target
+# Also need these other libs and binaries.
+ART_TEST_TARGET_RUN_TEST_DEPENDENCIES += \
+  libartagent-target libartagentd-target \
+  libtiagent-target libtiagentd-target \
+  libtistress-target libtistressd-target \
+  libarttest-target libarttestd-target \
+  libarttest_external-target libarttestd_external-target \
+  libnativebridgetest-target libnativebridgetestd-target \
+  signal_dumper-target
 
 # All tests require the host executables. The tests also depend on the core images, but on
 # specific version depending on the compiler.
@@ -62,6 +54,8 @@ ART_TEST_HOST_RUN_TEST_DEPENDENCIES := \
   $(ART_TEST_LIST_host_$(ART_HOST_ARCH)_libartagentd) \
   $(ART_TEST_LIST_host_$(ART_HOST_ARCH)_libarttest) \
   $(ART_TEST_LIST_host_$(ART_HOST_ARCH)_libarttestd) \
+  $(ART_TEST_LIST_host_$(ART_HOST_ARCH)_libarttest_external) \
+  $(ART_TEST_LIST_host_$(ART_HOST_ARCH)_libarttestd_external) \
   $(ART_TEST_LIST_host_$(ART_HOST_ARCH)_libnativebridgetest) \
   $(ART_TEST_LIST_host_$(ART_HOST_ARCH)_libnativebridgetestd) \
   $(ART_HOST_OUT_SHARED_LIBRARIES)/libicu_jni$(ART_HOST_SHLIB_EXTENSION) \
@@ -84,6 +78,8 @@ ART_TEST_HOST_RUN_TEST_DEPENDENCIES += \
   $(ART_TEST_LIST_host_$(2ND_ART_HOST_ARCH)_libartagentd) \
   $(ART_TEST_LIST_host_$(2ND_ART_HOST_ARCH)_libarttest) \
   $(ART_TEST_LIST_host_$(2ND_ART_HOST_ARCH)_libarttestd) \
+  $(ART_TEST_LIST_host_$(2ND_ART_HOST_ARCH)_libarttest_external) \
+  $(ART_TEST_LIST_host_$(2ND_ART_HOST_ARCH)_libarttestd_external) \
   $(ART_TEST_LIST_host_$(2ND_ART_HOST_ARCH)_libnativebridgetest) \
   $(ART_TEST_LIST_host_$(2ND_ART_HOST_ARCH)_libnativebridgetestd) \
   $(2ND_ART_HOST_OUT_SHARED_LIBRARIES)/libicu_jni$(ART_HOST_SHLIB_EXTENSION) \

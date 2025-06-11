@@ -64,4 +64,21 @@ TEST_F(ZipArchiveTest, FindAndExtract) {
   EXPECT_EQ(zip_entry->GetCrc32(), computed_crc);
 }
 
+TEST_F(ZipArchiveTest, FindEntryNotFound) {
+  std::string error_msg;
+  std::unique_ptr<ZipArchive> zip_archive(
+      ZipArchive::Open(GetLibCoreDexFileNames()[0].c_str(), &error_msg));
+  ASSERT_TRUE(zip_archive.get() != nullptr) << error_msg;
+  ASSERT_TRUE(error_msg.empty());
+
+  std::unique_ptr<ZipEntry> zip_entry(zip_archive->Find("non-existent-entry", &error_msg));
+  ASSERT_EQ(zip_entry, nullptr);
+  ASSERT_FALSE(error_msg.empty());
+  error_msg = "";
+
+  std::unique_ptr<ZipEntry> zip_entry_2(zip_archive->FindOrNull("non-existent-entry", &error_msg));
+  ASSERT_EQ(zip_entry, nullptr);
+  ASSERT_TRUE(error_msg.empty());
+}
+
 }  // namespace art

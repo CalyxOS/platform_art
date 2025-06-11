@@ -148,11 +148,11 @@ class DexClass : public ClassAccessor {
   inline bool IsInterface() const { return HasAccessFlags(kAccInterface); }
 
   inline bool Equals(const DexClass& other) const {
-    bool equals = strcmp(GetDescriptor(), other.GetDescriptor()) == 0;
+    bool equals = GetDescriptorView() == other.GetDescriptorView();
 
     if (equals) {
-      LOG(FATAL) << "Class duplication: " << GetDescriptor() << " in " << dex_file_.GetLocation()
-          << " and " << other.dex_file_.GetLocation();
+      LOG(FATAL) << "Class duplication: " << GetDescriptorView() << " in "
+          << dex_file_.GetLocation() << " and " << other.dex_file_.GetLocation();
     }
 
     return equals;
@@ -192,7 +192,7 @@ class DexMember {
   // Constructs a string with a unique signature of this class member.
   std::string GetApiEntry() const {
     std::stringstream ss;
-    ss << klass_.GetDescriptor() << "->" << GetName() << (IsMethod() ? "" : ":")
+    ss << klass_.GetDescriptorView() << "->" << GetName() << (IsMethod() ? "" : ":")
        << GetSignature();
     return ss.str();
   }
@@ -450,7 +450,7 @@ class Hierarchy final {
   // Returns true if at least one resolvable member was found.
   template<typename Fn>
   bool ForEachResolvableMember(const DexMember& other, Fn fn) {
-    HierarchyClass* klass = FindClass(other.GetDeclaringClass().GetDescriptor());
+    HierarchyClass* klass = FindClass(other.GetDeclaringClass().GetDescriptorView());
     return (klass != nullptr) && klass->ForEachResolvableMember(other, fn);
   }
 
@@ -473,7 +473,7 @@ class Hierarchy final {
       // Example code (`foo` exposed by ClassB):
       //   class ClassA { public void foo() { ... } }
       //   public class ClassB extends ClassA {}
-      HierarchyClass* klass = FindClass(member.GetDeclaringClass().GetDescriptor());
+      HierarchyClass* klass = FindClass(member.GetDeclaringClass().GetDescriptorView());
       CHECK(klass != nullptr);
       bool visible = false;
       klass->ForEachSubClass([&visible, &member](HierarchyClass* subclass) {
@@ -497,7 +497,7 @@ class Hierarchy final {
   }
 
  private:
-  HierarchyClass* FindClass(const std::string_view& descriptor) {
+  HierarchyClass* FindClass(std::string_view descriptor) {
     auto it = classes_.find(descriptor);
     if (it == classes_.end()) {
       return nullptr;
@@ -510,7 +510,7 @@ class Hierarchy final {
     // Create one HierarchyClass entry in `classes_` per class descriptor
     // and add all DexClass objects with the same descriptor to that entry.
     classpath_.ForEachDexClass([this](const DexClass& klass) {
-      classes_[klass.GetDescriptor()].AddDexClass(klass);
+      classes_[klass.GetDescriptorView()].AddDexClass(klass);
     });
 
     // Connect each HierarchyClass to its successors and predecessors.
@@ -532,7 +532,7 @@ class Hierarchy final {
           auto severity = verbose ? ::android::base::WARNING : ::android::base::FATAL;
           LOG(severity)
               << "Superclass/interface " << extends_desc
-              << " of class " << dex_klass.GetDescriptor() << " from dex file \""
+              << " of class " << dex_klass.GetDescriptorView() << " from dex file \""
               << dex_klass.GetDexFile().GetLocation() << "\" was not found. "
               << "Either it is missing or it appears later in the classpath spec.";
         }
@@ -898,7 +898,7 @@ class HiddenApi final {
               CHECK(!force_assign_all_ || api_list_found)
                   << "Could not find hiddenapi flags for dex entry: " << signature;
               if (api_list_found && it->second.GetIntValue() > max_hiddenapi_level_.GetIntValue()) {
-                ApiList without_domain(it->second.GetIntValue());
+                ApiList without_domain = ApiList::FromDexFlags(it->second.GetIntValue());
                 LOG(ERROR) << "Hidden api flag " << without_domain << " for member " << signature
                            << " in " << input_path << " exceeds maximum allowable flag "
                            << max_hiddenapi_level_;
@@ -956,7 +956,7 @@ class HiddenApi final {
       CHECK(api_flag_map.find(signature) == api_flag_map.end()) << path << ":" << line_number
           << ": Duplicate entry: " << signature << kErrorHelp;
 
-      ApiList membership;
+      ApiList membership = ApiList::Invalid();
 
       std::vector<std::string>::iterator apiListBegin = values.begin() + 1;
       std::vector<std::string>::iterator apiListEnd = values.end();
@@ -1098,7 +1098,7 @@ class HiddenApi final {
   //
   // By default this returns a GetIntValue() that is guaranteed to be bigger than
   // any valid value returned by GetIntValue().
-  ApiList max_hiddenapi_level_;
+  ApiList max_hiddenapi_level_ = ApiList::Invalid();
 
   // Whether the input is only a fragment of the whole bootclasspath and may
   // not include a complete set of classes. That requires the tool to ignore missing

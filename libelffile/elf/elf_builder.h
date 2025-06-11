@@ -37,14 +37,14 @@ namespace art {
 //   Elf_Ehdr                    - The ELF header.
 //   Elf_Phdr[]                  - Program headers for the linker.
 //   .note.gnu.build-id          - Optional build ID section (SHA-1 digest).
-//   .rodata                     - Oat metadata.
-//   .text                       - Compiled code.
-//   .bss                        - Zero-initialized writeable section.
-//   .dex                        - Reserved NOBITS space for dex-related data.
 //   .dynstr                     - Names for .dynsym.
 //   .dynsym                     - A few oat-specific dynamic symbols.
 //   .hash                       - Hash-table for .dynsym.
 //   .dynamic                    - Tags which let the linker locate .dynsym.
+//   .rodata                     - Oat metadata.
+//   .text                       - Compiled code.
+//   .bss                        - Zero-initialized writeable section.
+//   .dex                        - Reserved NOBITS space for dex-related data.
 //   .strtab                     - Names for .symtab.
 //   .symtab                     - Debug symbols.
 //   .debug_frame                - Unwind information (CFI).
@@ -57,9 +57,12 @@ namespace art {
 //
 // Some section are optional (the debug sections in particular).
 //
-// We try write the section data directly into the file without much
-// in-memory buffering.  This means we generally write sections based on the
-// dependency order (e.g. .dynamic points to .dynsym which points to .text).
+// To reduce the amount of padding necessary to page-align sections with
+// different permissions (and thus reduce disk usage), we group most read-only
+// data sections together at the start of the file. This includes .dynstr,
+// .dynsym, .hash, and .dynamic, whose contents are dependent on other sections.
+// Therefore, when building the ELF we initially just reserve space for them,
+// and write their contents later.
 //
 // In the cases where we need to buffer, we write the larger section first
 // and buffer the smaller one (e.g. .strtab is bigger than .symtab).
@@ -460,17 +463,17 @@ class ElfBuilder final {
   ElfBuilder(InstructionSet isa, OutputStream* output)
       : isa_(isa),
         stream_(output),
-        rodata_(this, ".rodata", SHT_PROGBITS, SHF_ALLOC, nullptr, 0, kElfSegmentAlignment, 0),
+        rodata_(this, ".rodata", SHT_PROGBITS, SHF_ALLOC, nullptr, 0, 4u, 0),
         text_(this, ".text", SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, nullptr, 0,
             kElfSegmentAlignment, 0),
         data_img_rel_ro_(this, ".data.img.rel.ro", SHT_PROGBITS, SHF_ALLOC, nullptr, 0,
             kElfSegmentAlignment, 0),
         bss_(this, ".bss", SHT_NOBITS, SHF_ALLOC, nullptr, 0, kElfSegmentAlignment, 0),
         dex_(this, ".dex", SHT_NOBITS, SHF_ALLOC, nullptr, 0, kElfSegmentAlignment, 0),
-        dynstr_(this, ".dynstr", SHF_ALLOC, kElfSegmentAlignment),
+        dynstr_(this, ".dynstr", SHF_ALLOC, 1),
         dynsym_(this, ".dynsym", SHT_DYNSYM, SHF_ALLOC, &dynstr_),
         hash_(this, ".hash", SHT_HASH, SHF_ALLOC, &dynsym_, 0, sizeof(Elf_Word), sizeof(Elf_Word)),
-        dynamic_(this, ".dynamic", SHT_DYNAMIC, SHF_ALLOC, &dynstr_, 0, kElfSegmentAlignment,
+        dynamic_(this, ".dynamic", SHT_DYNAMIC, SHF_ALLOC, &dynstr_, 0, sizeof(Elf_Addr),
             sizeof(Elf_Dyn)),
         strtab_(this, ".strtab", 0, 1),
         symtab_(this, ".symtab", SHT_SYMTAB, 0, &strtab_),
@@ -486,12 +489,14 @@ class ElfBuilder final {
         finished_(false),
         write_program_headers_(false),
         loaded_size_(0u),
-        virtual_address_(0) {
+        virtual_address_(0),
+        dynamic_sections_start_(0),
+        dynamic_sections_reserved_size_(0u) {
     text_.phdr_flags_ = PF_R | PF_X;
     data_img_rel_ro_.phdr_flags_ = PF_R | PF_W;  // Shall be made read-only at run time.
     bss_.phdr_flags_ = PF_R | PF_W;
     dex_.phdr_flags_ = PF_R;
-    dynamic_.phdr_flags_ = PF_R | PF_W;
+    dynamic_.phdr_flags_ = PF_R;
     dynamic_.phdr_type_ = PT_DYNAMIC;
     build_id_.phdr_type_ = PT_NOTE;
   }
@@ -631,6 +636,48 @@ class ElfBuilder final {
     return End();
   }
 
+  // Reserve space for: .dynstr, .dynsym, .hash and .dynamic.
+  //
+  // Dynamic section content is dependent on subsequent sections. Here, reserve enough
+  // space for it. We will write the content later (in PrepareDynamicSection).
+  void ReserveSpaceForDynamicSection(const std::string& elf_file_path) {
+    CHECK_EQ(dynamic_sections_start_, 0);
+    CHECK_EQ(dynamic_sections_reserved_size_, 0u);
+    CHECK(!rodata_.Exists());
+
+    off_t offset = stream_.Seek(0, kSeekCurrent);
+    dynamic_sections_start_ = offset;
+
+    dynstr_.AddSection();
+    // We don't expect that .dynstr section can have any alignment requirements.
+    DCHECK_EQ(dynstr_.header_.sh_addralign, 1u);
+    offset += []() consteval {
+      size_t size = 0;
+      for (size_t i = 0; i < kDynamicSymbolCount; i++) {
+        DynamicSymbol sym = static_cast<DynamicSymbol>(i);
+        size += GetDynamicSymbolName(sym).length() + 1;
+      }
+      return size;
+    }();
+    offset += GetSoname(elf_file_path).length() + 1;
+
+    dynsym_.AddSection();
+    offset = RoundUp(offset, dynsym_.header_.sh_addralign);
+    offset += kDynamicSymbolCount * sizeof(Elf_Sym);
+
+    hash_.AddSection();
+    offset = RoundUp(offset, hash_.header_.sh_addralign);
+    offset += PrepareDynamicSymbolHashtable(kDynamicSymbolCount, /*hashtable=*/ nullptr);
+
+    dynamic_.AddSection();
+    offset = RoundUp(offset, dynamic_.header_.sh_addralign);
+    offset += kDynamicEntriesCount * sizeof(Elf_Dyn);
+
+    dynamic_sections_reserved_size_ = offset - dynamic_sections_start_;
+
+    stream_.Seek(offset, kSeekSet);
+  }
+
   // The running program does not have access to section headers
   // and the loader is not supposed to use them either.
   // The dynamic sections therefore replicates some of the layout
@@ -646,13 +693,13 @@ class ElfBuilder final {
                              Elf_Word bss_methods_offset,
                              Elf_Word bss_roots_offset,
                              Elf_Word dex_size) {
-    std::string soname(elf_file_path);
-    size_t directory_separator_pos = soname.rfind('/');
-    if (directory_separator_pos != std::string::npos) {
-      soname = soname.substr(directory_separator_pos + 1);
-    }
+    CHECK_NE(dynamic_sections_reserved_size_, 0u);
 
-    // Allocate all pre-dynamic sections.
+    // Skip over the reserved memory for dynamic sections - we prepare them later
+    // due to dependencies.
+    Elf_Addr dynamic_sections_address = virtual_address_;
+    virtual_address_ += dynamic_sections_reserved_size_;
+
     rodata_.AllocateVirtualMemory(rodata_size);
     text_.AllocateVirtualMemory(text_size);
     if (data_img_rel_ro_size != 0) {
@@ -667,32 +714,33 @@ class ElfBuilder final {
 
     // Cache .dynstr, .dynsym and .hash data.
     dynstr_.Add("");  // dynstr should start with empty string.
-    Elf_Word oatdata = dynstr_.Add("oatdata");
+    Elf_Word oatdata = dynstr_.Add(GetDynamicSymbolName(DynamicSymbol::kOatData));
     dynsym_.Add(oatdata, &rodata_, rodata_.GetAddress(), rodata_size, STB_GLOBAL, STT_OBJECT);
     if (text_size != 0u) {
       // The runtime does not care about the size of this symbol (it uses the "lastword" symbol).
       // We use size 0 (meaning "unknown size" in ELF) to prevent overlap with the debug symbols.
-      Elf_Word oatexec = dynstr_.Add("oatexec");
+      Elf_Word oatexec = dynstr_.Add(GetDynamicSymbolName(DynamicSymbol::kOatExec));
       dynsym_.Add(oatexec, &text_, text_.GetAddress(), /* size= */ 0, STB_GLOBAL, STT_OBJECT);
-      Elf_Word oatlastword = dynstr_.Add("oatlastword");
+      Elf_Word oatlastword = dynstr_.Add(GetDynamicSymbolName(DynamicSymbol::kOatLastWord));
       Elf_Word oatlastword_address = text_.GetAddress() + text_size - 4;
       dynsym_.Add(oatlastword, &text_, oatlastword_address, 4, STB_GLOBAL, STT_OBJECT);
     } else if (rodata_size != 0) {
       // rodata_ can be size 0 for dwarf_test.
-      Elf_Word oatlastword = dynstr_.Add("oatlastword");
+      Elf_Word oatlastword = dynstr_.Add(GetDynamicSymbolName(DynamicSymbol::kOatLastWord));
       Elf_Word oatlastword_address = rodata_.GetAddress() + rodata_size - 4;
       dynsym_.Add(oatlastword, &rodata_, oatlastword_address, 4, STB_GLOBAL, STT_OBJECT);
     }
     DCHECK_LE(data_img_rel_ro_app_image_offset, data_img_rel_ro_size);
     if (data_img_rel_ro_size != 0u) {
-      Elf_Word oatdataimgrelro = dynstr_.Add("oatdataimgrelro");
+      Elf_Word oatdataimgrelro = dynstr_.Add(GetDynamicSymbolName(DynamicSymbol::kOatDataImgRelRo));
       dynsym_.Add(oatdataimgrelro,
                   &data_img_rel_ro_,
                   data_img_rel_ro_.GetAddress(),
                   data_img_rel_ro_size,
                   STB_GLOBAL,
                   STT_OBJECT);
-      Elf_Word oatdataimgrelrolastword = dynstr_.Add("oatdataimgrelrolastword");
+      Elf_Word oatdataimgrelrolastword =
+          dynstr_.Add(GetDynamicSymbolName(DynamicSymbol::kOatDataImgRelRoLastWord));
       dynsym_.Add(oatdataimgrelrolastword,
                   &data_img_rel_ro_,
                   data_img_rel_ro_.GetAddress() + data_img_rel_ro_size - 4,
@@ -700,7 +748,8 @@ class ElfBuilder final {
                   STB_GLOBAL,
                   STT_OBJECT);
       if (data_img_rel_ro_app_image_offset != data_img_rel_ro_size) {
-        Elf_Word oatdataimgrelroappimage = dynstr_.Add("oatdataimgrelroappimage");
+        Elf_Word oatdataimgrelroappimage =
+            dynstr_.Add(GetDynamicSymbolName(DynamicSymbol::kOatDataImgRelRoAppImage));
         dynsym_.Add(oatdataimgrelroappimage,
                     &data_img_rel_ro_,
                     data_img_rel_ro_.GetAddress() + data_img_rel_ro_app_image_offset,
@@ -711,7 +760,7 @@ class ElfBuilder final {
     }
     DCHECK_LE(bss_roots_offset, bss_size);
     if (bss_size != 0u) {
-      Elf_Word oatbss = dynstr_.Add("oatbss");
+      Elf_Word oatbss = dynstr_.Add(GetDynamicSymbolName(DynamicSymbol::kOatBss));
       dynsym_.Add(oatbss, &bss_, bss_.GetAddress(), bss_roots_offset, STB_GLOBAL, STT_OBJECT);
       DCHECK_LE(bss_methods_offset, bss_roots_offset);
       DCHECK_LE(bss_roots_offset, bss_size);
@@ -719,7 +768,7 @@ class ElfBuilder final {
       if (bss_methods_offset != bss_roots_offset) {
         Elf_Word bss_methods_address = bss_.GetAddress() + bss_methods_offset;
         Elf_Word bss_methods_size = bss_roots_offset - bss_methods_offset;
-        Elf_Word oatbssroots = dynstr_.Add("oatbssmethods");
+        Elf_Word oatbssroots = dynstr_.Add(GetDynamicSymbolName(DynamicSymbol::kOatBssMethods));
         dynsym_.Add(
             oatbssroots, &bss_, bss_methods_address, bss_methods_size, STB_GLOBAL, STT_OBJECT);
       }
@@ -727,40 +776,34 @@ class ElfBuilder final {
       if (bss_roots_offset != bss_size) {
         Elf_Word bss_roots_address = bss_.GetAddress() + bss_roots_offset;
         Elf_Word bss_roots_size = bss_size - bss_roots_offset;
-        Elf_Word oatbssroots = dynstr_.Add("oatbssroots");
+        Elf_Word oatbssroots = dynstr_.Add(GetDynamicSymbolName(DynamicSymbol::kOatBssRoots));
         dynsym_.Add(
             oatbssroots, &bss_, bss_roots_address, bss_roots_size, STB_GLOBAL, STT_OBJECT);
       }
-      Elf_Word oatbsslastword = dynstr_.Add("oatbsslastword");
+      Elf_Word oatbsslastword = dynstr_.Add(GetDynamicSymbolName(DynamicSymbol::kOatBssLastWord));
       Elf_Word bsslastword_address = bss_.GetAddress() + bss_size - 4;
       dynsym_.Add(oatbsslastword, &bss_, bsslastword_address, 4, STB_GLOBAL, STT_OBJECT);
     }
     if (dex_size != 0u) {
-      Elf_Word oatdex = dynstr_.Add("oatdex");
+      Elf_Word oatdex = dynstr_.Add(GetDynamicSymbolName(DynamicSymbol::kOatDex));
       dynsym_.Add(oatdex, &dex_, dex_.GetAddress(), /* size= */ 0, STB_GLOBAL, STT_OBJECT);
-      Elf_Word oatdexlastword = dynstr_.Add("oatdexlastword");
+      Elf_Word oatdexlastword = dynstr_.Add(GetDynamicSymbolName(DynamicSymbol::kOatDexLastWord));
       Elf_Word oatdexlastword_address = dex_.GetAddress() + dex_size - 4;
       dynsym_.Add(oatdexlastword, &dex_, oatdexlastword_address, 4, STB_GLOBAL, STT_OBJECT);
     }
 
-    Elf_Word soname_offset = dynstr_.Add(soname);
+    Elf_Word soname_offset = dynstr_.Add(GetSoname(elf_file_path));
 
     // We do not really need a hash-table since there is so few entries.
     // However, the hash-table is the only way the linker can actually
     // determine the number of symbols in .dynsym so it is required.
     int count = dynsym_.GetCacheSize() / sizeof(Elf_Sym);  // Includes NULL.
     std::vector<Elf_Word> hash;
-    hash.push_back(1);  // Number of buckets.
-    hash.push_back(count);  // Number of chains.
-    // Buckets.  Having just one makes it linear search.
-    hash.push_back(1);  // Point to first non-NULL symbol.
-    // Chains.  This creates linked list of symbols.
-    hash.push_back(0);  // Placeholder entry for the NULL symbol.
-    for (int i = 1; i < count - 1; i++) {
-      hash.push_back(i + 1);  // Each symbol points to the next one.
-    }
-    hash.push_back(0);  // Last symbol terminates the chain.
+    PrepareDynamicSymbolHashtable(count, &hash);
     hash_.Add(hash.data(), hash.size() * sizeof(hash[0]));
+
+    Elf_Addr current_virtual_address = virtual_address_;
+    virtual_address_ = dynamic_sections_address;
 
     // Allocate all remaining sections.
     dynstr_.AllocateVirtualMemory(dynstr_.GetCacheSize());
@@ -776,17 +819,32 @@ class ElfBuilder final {
       { .d_tag = DT_SONAME, .d_un = { .d_ptr = soname_offset }, },
       { .d_tag = DT_NULL,   .d_un = { .d_ptr = 0 }, },
     };
+    static_assert(sizeof(dyns) == kDynamicEntriesCount * sizeof(dyns[0]));
+
     dynamic_.Add(&dyns, sizeof(dyns));
     dynamic_.AllocateVirtualMemory(dynamic_.GetCacheSize());
+
+    CHECK_LE(virtual_address_, rodata_.GetAddress());
+    virtual_address_ = current_virtual_address;
 
     loaded_size_ = RoundUp(virtual_address_, kElfSegmentAlignment);
   }
 
   void WriteDynamicSection() {
+    CHECK_NE(dynamic_sections_start_, 0);
+    CHECK_NE(dynamic_sections_reserved_size_, 0u);
+
+    off_t current_offset = stream_.Seek(0, kSeekCurrent);
+    stream_.Seek(dynamic_sections_start_, kSeekSet);
+
     dynstr_.WriteCachedSection();
     dynsym_.WriteCachedSection();
     hash_.WriteCachedSection();
     dynamic_.WriteCachedSection();
+
+    DCHECK_LE(stream_.Seek(0, kSeekCurrent),
+        static_cast<off_t>(dynamic_sections_start_ + dynamic_sections_reserved_size_));
+    stream_.Seek(current_offset, kSeekSet);
   }
 
   Elf_Word GetLoadedSize() {
@@ -977,6 +1035,91 @@ class ElfBuilder final {
     return phdrs;
   }
 
+  enum class DynamicSymbol {
+    kNull,
+    kOatData,
+    kOatExec,
+    kOatLastWord,
+    kOatDataImgRelRo,
+    kOatDataImgRelRoLastWord,
+    kOatDataImgRelRoAppImage,
+    kOatBss,
+    kOatBssMethods,
+    kOatBssRoots,
+    kOatBssLastWord,
+    kOatDex,
+    kOatDexLastWord,
+    kLast = kOatDexLastWord
+  };
+
+  static constexpr size_t kDynamicSymbolCount = static_cast<size_t>(DynamicSymbol::kLast) + 1;
+  static constexpr size_t kDynamicEntriesCount = 7;
+
+  static constexpr std::string GetDynamicSymbolName(DynamicSymbol sym) {
+    switch (sym) {
+      case DynamicSymbol::kNull:
+        return "";
+      case DynamicSymbol::kOatData:
+        return "oatdata";
+      case DynamicSymbol::kOatExec:
+        return "oatexec";
+      case DynamicSymbol::kOatLastWord:
+        return "oatlastword";
+      case DynamicSymbol::kOatDataImgRelRo:
+        return "oatdataimgrelro";
+      case DynamicSymbol::kOatDataImgRelRoLastWord:
+        return "oatdataimgrelrolastword";
+      case DynamicSymbol::kOatDataImgRelRoAppImage:
+        return "oatdataimgrelroappimage";
+      case DynamicSymbol::kOatBss:
+        return "oatbss";
+      case DynamicSymbol::kOatBssMethods:
+        return "oatbssmethods";
+      case DynamicSymbol::kOatBssRoots:
+        return "oatbssroots";
+      case DynamicSymbol::kOatBssLastWord:
+        return "oatbsslastword";
+      case DynamicSymbol::kOatDex:
+        return "oatdex";
+      case DynamicSymbol::kOatDexLastWord:
+        return "oatdexlastword";
+    }
+  }
+
+  // This method builds a hashtable for dynamic symbols using `hashtable` as a storage.
+  // If `hashtable` is nullptr, it just calculate its size in bytes and returns it.
+  static size_t PrepareDynamicSymbolHashtable(size_t count, std::vector<Elf_Word> *hashtable) {
+    size_t size = 0;
+    auto write = [&size, hashtable](Elf_Word value) {
+      if (hashtable) {
+        hashtable->push_back(value);
+      }
+      size += sizeof(value);
+    };
+
+    write(1);  // Number of buckets.
+    write(count);  // Number of chains.
+    // Buckets.  Having just one makes it linear search.
+    write(1);  // Point to first non-NULL symbol.
+    // Chains.  This creates linked list of symbols.
+    write(0);  // Placeholder entry for the NULL symbol.
+    for (size_t i = 1; i < count - 1; i++) {
+      write(i + 1);  // Each symbol points to the next one.
+    }
+    write(0);  // Last symbol terminates the chain.
+
+    return size;
+  }
+
+  static std::string GetSoname(const std::string& elf_file_path) {
+    std::string soname(elf_file_path);
+    size_t directory_separator_pos = soname.rfind('/');
+    if (directory_separator_pos != std::string::npos) {
+      soname = soname.substr(directory_separator_pos + 1);
+    }
+    return soname;
+  }
+
   InstructionSet isa_;
 
   ErrorDelayingOutputStream stream_;
@@ -1013,6 +1156,12 @@ class ElfBuilder final {
 
   // Used for allocation of virtual address space.
   Elf_Addr virtual_address_;
+
+  // Offset in the ELF where the first dynamic section is written (.dynstr).
+  off_t dynamic_sections_start_;
+
+  // Size reserved for dynamic sections: .dynstr, .dynsym, .hash and .dynamic.
+  size_t dynamic_sections_reserved_size_;
 
   DISALLOW_COPY_AND_ASSIGN(ElfBuilder);
 };

@@ -95,6 +95,7 @@ ArtMethod* WellKnownClasses::java_lang_ThreadGroup_add;
 ArtMethod* WellKnownClasses::java_lang_ThreadGroup_threadTerminated;
 ArtMethod* WellKnownClasses::java_lang_invoke_MethodHandle_asType;
 ArtMethod* WellKnownClasses::java_lang_invoke_MethodHandle_invokeExact;
+ArtMethod* WellKnownClasses::java_lang_invoke_MethodHandleImpl_fieldInit;
 ArtMethod* WellKnownClasses::java_lang_invoke_MethodHandleImpl_init;
 ArtMethod* WellKnownClasses::java_lang_invoke_MethodHandles_lookup;
 ArtMethod* WellKnownClasses::java_lang_invoke_MethodHandles_makeIdentity;
@@ -126,7 +127,10 @@ ArtField* WellKnownClasses::dalvik_system_DexPathList_dexElements;
 ArtField* WellKnownClasses::dalvik_system_DexPathList__Element_dexFile;
 ArtField* WellKnownClasses::dalvik_system_VMRuntime_nonSdkApiUsageConsumer;
 ArtField* WellKnownClasses::java_io_FileDescriptor_descriptor;
+ArtField* WellKnownClasses::java_lang_ref_Reference_disableIntrinsic;
+ArtField* WellKnownClasses::java_lang_ref_Reference_slowPathEnabled;
 ArtField* WellKnownClasses::java_lang_ClassLoader_parent;
+ArtField* WellKnownClasses::java_lang_Object_shadowKlass;
 ArtField* WellKnownClasses::java_lang_String_EMPTY;
 ArtField* WellKnownClasses::java_lang_Thread_parkBlocker;
 ArtField* WellKnownClasses::java_lang_Thread_daemon;
@@ -172,6 +176,9 @@ ArtField* WellKnownClasses::java_lang_Short_ShortCache_cache;
 ArtField* WellKnownClasses::java_lang_Integer_IntegerCache_cache;
 ArtField* WellKnownClasses::java_lang_Long_LongCache_cache;
 
+ArtField* WellKnownClasses::java_lang_Boolean_value;
+ArtField* WellKnownClasses::java_lang_Float_value;
+ArtField* WellKnownClasses::java_lang_Double_value;
 ArtField* WellKnownClasses::java_lang_Byte_value;
 ArtField* WellKnownClasses::java_lang_Character_value;
 ArtField* WellKnownClasses::java_lang_Short_value;
@@ -407,6 +414,12 @@ void WellKnownClasses::InitFieldsAndMethodsOnly(JNIEnv* env) {
   java_lang_Long_LongCache_cache = CacheBoxingCacheField(
       class_linker, self, "Ljava/lang/Long$LongCache;", "[Ljava/lang/Long;");
 
+  java_lang_Boolean_value = CacheValueInBoxField(
+      class_linker, self, "Ljava/lang/Boolean;", "Z");
+  java_lang_Float_value = CacheValueInBoxField(
+      class_linker, self, "Ljava/lang/Float;", "F");
+  java_lang_Double_value = CacheValueInBoxField(
+      class_linker, self, "Ljava/lang/Double;", "D");
   java_lang_Byte_value = CacheValueInBoxField(
       class_linker, self, "Ljava/lang/Byte;", "B");
   java_lang_Character_value = CacheValueInBoxField(
@@ -633,6 +646,12 @@ void WellKnownClasses::InitFieldsAndMethodsOnly(JNIEnv* env) {
       "invokeExact",
       "([Ljava/lang/Object;)Ljava/lang/Object;",
       pointer_size);
+  java_lang_invoke_MethodHandleImpl_fieldInit = CacheMethod(
+    j_l_i_MethodHandleImpl.Get(),
+    /*is_static=*/ false,
+    "<init>",
+    "(Ljava/lang/reflect/Field;ILjava/lang/invoke/MethodType;)V",
+    pointer_size);
   java_lang_invoke_MethodHandleImpl_init = CacheMethod(
       j_l_i_MethodHandleImpl.Get(),
       /*is_static=*/ false,
@@ -736,6 +755,16 @@ void WellKnownClasses::InitFieldsAndMethodsOnly(JNIEnv* env) {
       "dispatch",
       "(I[BII)Lorg/apache/harmony/dalvik/ddmc/Chunk;",
       pointer_size);
+
+  ObjPtr<mirror::Class> j_l_Object = GetClassRoot<mirror::Object>(class_linker);
+  java_lang_Object_shadowKlass = CacheField(
+      j_l_Object, /*is_static=*/ false, "shadow$_klass_", "Ljava/lang/Class;");
+
+  ObjPtr<mirror::Class> j_l_r_Reference = GetClassRoot<mirror::Reference>(class_linker);
+  java_lang_ref_Reference_disableIntrinsic = CacheField(
+      j_l_r_Reference, /*is_static=*/ true, "disableIntrinsic", "Z");
+  java_lang_ref_Reference_slowPathEnabled = CacheField(
+      j_l_r_Reference, /*is_static=*/ true, "slowPathEnabled", "Z");
 
   dalvik_system_BaseDexClassLoader_pathList = CacheField(
       d_s_bdcl.Get(), /*is_static=*/ false, "pathList", "Ldalvik/system/DexPathList;");
@@ -933,6 +962,7 @@ void WellKnownClasses::Clear() {
   java_lang_invoke_MethodHandle_asType = nullptr;
   java_lang_invoke_MethodHandle_invokeExact = nullptr;
   java_lang_invoke_MethodHandleImpl_init = nullptr;
+  java_lang_invoke_MethodHandleImpl_fieldInit = nullptr;
   java_lang_invoke_MethodHandles_lookup = nullptr;
   java_lang_invoke_MethodHandles_makeIdentity = nullptr;
   java_lang_invoke_MethodHandles_Lookup_findConstructor = nullptr;
@@ -959,7 +989,10 @@ void WellKnownClasses::Clear() {
   dalvik_system_DexPathList_dexElements = nullptr;
   dalvik_system_DexPathList__Element_dexFile = nullptr;
   dalvik_system_VMRuntime_nonSdkApiUsageConsumer = nullptr;
+  java_lang_ref_Reference_disableIntrinsic = nullptr;
+  java_lang_ref_Reference_slowPathEnabled = nullptr;
   java_lang_ClassLoader_parent = nullptr;
+  java_lang_Object_shadowKlass = nullptr;
   java_lang_String_EMPTY = nullptr;
   java_lang_Thread_parkBlocker = nullptr;
   java_lang_Thread_daemon = nullptr;

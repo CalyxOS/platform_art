@@ -116,12 +116,14 @@ class FuzzerCorpusTest : public CommonRuntimeTest {
 
     // Scope for the handles
     {
-      art::StackHandleScope<3> scope(soa.Self());
+      art::StackHandleScope<4> scope(soa.Self());
       art::Handle<art::mirror::ClassLoader> h_loader =
           scope.NewHandle(soa.Decode<art::mirror::ClassLoader>(class_loader));
       art::MutableHandle<art::mirror::Class> h_klass(scope.NewHandle<art::mirror::Class>(nullptr));
       art::MutableHandle<art::mirror::DexCache> h_dex_cache(
           scope.NewHandle<art::mirror::DexCache>(nullptr));
+      art::MutableHandle<art::mirror::ClassLoader> h_dex_cache_class_loader =
+          scope.NewHandle(h_loader.Get());
 
       for (art::ClassAccessor accessor : dex_file.GetClasses()) {
         h_klass.Assign(
@@ -135,13 +137,17 @@ class FuzzerCorpusTest : public CommonRuntimeTest {
           continue;
         }
         h_dex_cache.Assign(h_klass->GetDexCache());
+
+        // The class loader from the class's dex cache is different from the dex file's class loader
+        // for boot image classes e.g. java.util.AbstractCollection.
+        h_dex_cache_class_loader.Assign(h_klass->GetDexCache()->GetClassLoader());
         verifier::FailureKind failure =
             verifier::ClassVerifier::VerifyClass(soa.Self(),
                                                  /* verifier_deps= */ nullptr,
                                                  h_dex_cache->GetDexFile(),
                                                  h_klass,
                                                  h_dex_cache,
-                                                 h_loader,
+                                                 h_dex_cache_class_loader,
                                                  *h_klass->GetClassDef(),
                                                  runtime->GetCompilerCallbacks(),
                                                  verifier::HardFailLogMode::kLogWarning,

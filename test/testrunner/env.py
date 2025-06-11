@@ -164,4 +164,4 @@ ART_CHROOT_CMD = _env.get('ART_CHROOT_CMD', "unshare --user --map-root-user chro
 if ART_TEST_ON_VM:
   ART_TEST_CHROOT = _env.get('ART_TEST_CHROOT', f"/home/{ART_TEST_SSH_USER}/art-test-chroot")
 else:
-  ART_TEST_CHROOT = _env.get('ART_TEST_CHROOT', "/data/local/art-test-chroot")
+  ART_TEST_CHROOT = _env.get('ART_TEST_CHROOT')

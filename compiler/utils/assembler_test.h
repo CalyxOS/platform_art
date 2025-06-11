@@ -316,9 +316,8 @@ class AssemblerTest : public AssemblerTestBase {
 
     for (auto reg : registers) {
       for (int64_t imm : imms) {
-        ImmType new_imm = CreateImmediate(imm);
         if (f != nullptr) {
-          (assembler_.get()->*f)(reg, new_imm + bias);
+          (assembler_.get()->*f)(reg, CreateImmediate(imm + bias));
         }
         std::string base = fmt;
 
@@ -514,6 +513,18 @@ class AssemblerTest : public AssemblerTestBase {
         &AssemblerTest::GetRegName<RegisterView::kUsePrimaryName>,
         fmt,
         bias);
+  }
+
+  template <typename ImmType>
+  std::string RepeatFI(void (Ass::*f)(FPReg, ImmType),
+                       size_t imm_bits,
+                       const std::string& fmt) {
+    return RepeatTemplatedRegisterImmBits<FPReg, ImmType>(f,
+                                                          imm_bits,
+                                                          GetFPRegisters(),
+                                                          &AssemblerTest::GetFPRegName,
+                                                          fmt,
+                                                          /*bias=*/ 0);
   }
 
   std::string RepeatFF(void (Ass::*f)(FPReg, FPReg), const std::string& fmt) {

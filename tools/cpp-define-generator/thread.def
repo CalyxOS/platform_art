@@ -77,3 +77,4 @@ ASM_DEFINE(TRACE_BUFFER_INIT_OFFSET,
 ASM_DEFINE(TRACE_BUFFER_CURRENT_OFFSET,
            art::Thread::TraceBufferCurrPtrOffset<art::kRuntimePointerSize>().Int32Value())
 ASM_DEFINE(TRACE_BUFFER_SIZE, (art::kAlwaysOnTraceBufSize - 1) * sizeof(uintptr_t))
+ASM_DEFINE(LONG_RUNNING_METHOD_THRESHOLD, art::kLongRunningMethodThreshold)

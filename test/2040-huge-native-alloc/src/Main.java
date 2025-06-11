@@ -104,7 +104,7 @@ public class Main {
     if (startingGcNum == getGcNum()) {
       System.out.println("No gc completed");
     }
-    if (actualTime > 500_000_000) {
+    if (actualTime > 500_000_000 * (isVm() ? 4 : 1)) {
       System.out.println("Notifications ran too slowly; excessive blocking? msec = "
           + (actualTime / 1_000_000));
     } else if (actualTime < minBlockingTime) {
@@ -135,4 +135,8 @@ public class Main {
   private static native ByteBuffer getHugeNativeBuffer();
   private static native void deleteHugeNativeBuffer(ByteBuffer buf);
   private static native int getGcNum();
+
+  private static boolean isVm() {
+    return System.getenv("ART_TEST_ON_VM") != null;
+  }
 }

@@ -31,7 +31,7 @@ public class Main {
         assertIntEquals(12, $noinline$testLongToInt(1, 0));
     }
 
-    /// CHECK-START: long Main.$noinline$testIntToLong(int, int) select_generator (after)
+    /// CHECK-START: long Main.$noinline$testIntToLong(int, int) control_flow_simplifier (after)
     /// CHECK:     <<Const10:j\d+>> LongConstant 10
     /// CHECK:     <<Const1:i\d+>>  IntConstant 1
     /// CHECK:     <<Const2:i\d+>>  IntConstant 2
@@ -54,7 +54,7 @@ public class Main {
         return result + (a < b ? c : d);
     }
 
-    /// CHECK-START: float Main.$noinline$testIntToFloat(int, int) select_generator (after)
+    /// CHECK-START: float Main.$noinline$testIntToFloat(int, int) control_flow_simplifier (after)
     /// CHECK:     <<Const10:f\d+>> FloatConstant 10
     /// CHECK:     <<Const1:i\d+>>  IntConstant 1
     /// CHECK:     <<Const2:i\d+>>  IntConstant 2
@@ -77,7 +77,7 @@ public class Main {
         return result + (a < b ? c : d);
     }
 
-    /// CHECK-START: byte Main.$noinline$testIntToByte(int, int) select_generator (after)
+    /// CHECK-START: byte Main.$noinline$testIntToByte(int, int) control_flow_simplifier (after)
     /// CHECK:     <<Const10:i\d+>>  IntConstant 10
     /// CHECK:     <<Const257:i\d+>> IntConstant 257
     /// CHECK:     <<Const258:i\d+>> IntConstant 258
@@ -102,7 +102,7 @@ public class Main {
         return (byte) (result + (byte) (a < b ? c : d));
     }
 
-    /// CHECK-START: int Main.$noinline$testLongToInt(int, int) select_generator (after)
+    /// CHECK-START: int Main.$noinline$testLongToInt(int, int) control_flow_simplifier (after)
     /// CHECK:     <<Const10:i\d+>> IntConstant 10
     /// CHECK:     <<Const1:j\d+>>  LongConstant 4294967297
     /// CHECK:     <<Const2:j\d+>>  LongConstant 4294967298

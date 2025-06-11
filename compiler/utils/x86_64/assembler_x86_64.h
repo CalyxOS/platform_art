@@ -498,10 +498,10 @@ class X86_64Assembler final : public Assembler {
   void movsxd(CpuRegister dst, CpuRegister src);
   void movsxd(CpuRegister dst, const Address& src);
 
-  void movd(XmmRegister dst, CpuRegister src);  // Note: this is the r64 version, formally movq.
-  void movd(CpuRegister dst, XmmRegister src);  // Note: this is the r64 version, formally movq.
-  void movd(XmmRegister dst, CpuRegister src, bool is64bit);
-  void movd(CpuRegister dst, XmmRegister src, bool is64bit);
+  void movq(XmmRegister dst, CpuRegister src);
+  void movq(CpuRegister dst, XmmRegister src);
+  void movd(XmmRegister dst, CpuRegister src);
+  void movd(CpuRegister dst, XmmRegister src);
 
   void addss(XmmRegister dst, XmmRegister src);
   void addss(XmmRegister dst, const Address& src);
@@ -1132,6 +1132,8 @@ class X86_64Assembler final : public Assembler {
   void EmitGenericShift(bool wide, int rm, CpuRegister reg, const Immediate& imm);
   void EmitGenericShift(bool wide, int rm, CpuRegister operand, CpuRegister shifter);
 
+  void EmitMovCpuFpu(XmmRegister fp_reg, CpuRegister cpu_reg, bool is64bit, uint8_t opcode);
+
   // If any input is not false, output the necessary rex prefix.
   void EmitOptionalRex(bool force, bool w, bool r, bool x, bool b);
 
@@ -1165,6 +1167,10 @@ class X86_64Assembler final : public Assembler {
                                            bool normalize_both = false);
   void EmitOptionalByteRegNormalizingRex32(CpuRegister dst, const Operand& operand);
 
+  void EmitVexPrefixForAddress(const Address& addr, bool r, int vex_l, int vex_pp);
+
+  // TODO: Rename these functions. They calculate the byte but they do not "emit" that
+  // byte to the code buffer.
   uint8_t EmitVexPrefixByteZero(bool is_twobyte_form);
   uint8_t EmitVexPrefixByteOne(bool R, bool X, bool B, int SET_VEX_M);
   uint8_t EmitVexPrefixByteOne(bool R,
@@ -1178,6 +1184,13 @@ class X86_64Assembler final : public Assembler {
   uint8_t EmitVexPrefixByteTwo(bool W,
                                int SET_VEX_L,
                                int SET_VEX_PP);
+
+  void EmitVecArithAndLogicalOperation(XmmRegister dst,
+                                       XmmRegister src1,
+                                       XmmRegister src2,
+                                       uint8_t opcode,
+                                       int vex_pp,
+                                       bool is_commutative = false);
 
   // Helper function to emit a shorter variant of XCHG if at least one operand is RAX/EAX/AX.
   bool try_xchg_rax(CpuRegister dst,

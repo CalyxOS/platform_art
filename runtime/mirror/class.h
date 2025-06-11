@@ -288,6 +288,9 @@ class EXPORT MANAGED Class final : public Object {
 
   ALWAYS_INLINE void SetHasDefaultMethods() REQUIRES_SHARED(Locks::mutator_lock_);
 
+  ALWAYS_INLINE void SetHasTypeChecksFailure() REQUIRES_SHARED(Locks::mutator_lock_);
+  ALWAYS_INLINE bool HasTypeChecksFailure() REQUIRES_SHARED(Locks::mutator_lock_);
+
   ALWAYS_INLINE void SetFinalizable() REQUIRES_SHARED(Locks::mutator_lock_) {
     uint32_t flags = GetField32(OFFSET_OF_OBJECT_MEMBER(Class, access_flags_));
     SetAccessFlagsDuringLinking(flags | kAccClassIsFinalizable);
@@ -1032,21 +1035,24 @@ class EXPORT MANAGED Class final : public Object {
   ALWAYS_INLINE void SetIfTable(ObjPtr<IfTable> new_iftable)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  // Get instance fields of the class (See also GetSFields).
-  LengthPrefixedArray<ArtField>* GetIFieldsPtr() REQUIRES_SHARED(Locks::mutator_lock_);
+  // Get fields of the class.
+  LengthPrefixedArray<ArtField>* GetFieldsPtr() REQUIRES_SHARED(Locks::mutator_lock_);
 
-  ALWAYS_INLINE IterationRange<StrideIterator<ArtField>> GetIFields()
+  ALWAYS_INLINE IterationRange<StrideIterator<ArtField>> GetFields()
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  void SetIFieldsPtr(LengthPrefixedArray<ArtField>* new_ifields)
+  void SetFieldsPtr(LengthPrefixedArray<ArtField>* new_fields)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Unchecked edition has no verification flags.
-  void SetIFieldsPtrUnchecked(LengthPrefixedArray<ArtField>* new_sfields)
+  void SetFieldsPtrUnchecked(LengthPrefixedArray<ArtField>* new_fields)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  uint32_t NumInstanceFields() REQUIRES_SHARED(Locks::mutator_lock_);
-  ArtField* GetInstanceField(uint32_t i) REQUIRES_SHARED(Locks::mutator_lock_);
+  ArtField* GetField(uint32_t i) REQUIRES_SHARED(Locks::mutator_lock_);
+  uint32_t NumFields() REQUIRES_SHARED(Locks::mutator_lock_);
+  bool HasStaticFields() REQUIRES_SHARED(Locks::mutator_lock_);
+  uint32_t ComputeNumStaticFields() REQUIRES_SHARED(Locks::mutator_lock_);
+  uint32_t ComputeNumInstanceFields() REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Returns the number of instance fields containing reference types. Does not count fields in any
   // super classes.
@@ -1104,23 +1110,6 @@ class EXPORT MANAGED Class final : public Object {
   MemberOffset GetFirstReferenceStaticFieldOffsetDuringLinking(PointerSize pointer_size)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  // Gets the static fields of the class.
-  LengthPrefixedArray<ArtField>* GetSFieldsPtr() REQUIRES_SHARED(Locks::mutator_lock_);
-  ALWAYS_INLINE IterationRange<StrideIterator<ArtField>> GetSFields()
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  void SetSFieldsPtr(LengthPrefixedArray<ArtField>* new_sfields)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  // Unchecked edition has no verification flags.
-  void SetSFieldsPtrUnchecked(LengthPrefixedArray<ArtField>* new_sfields)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  uint32_t NumStaticFields() REQUIRES_SHARED(Locks::mutator_lock_);
-
-  // TODO: uint16_t
-  ArtField* GetStaticField(uint32_t i) REQUIRES_SHARED(Locks::mutator_lock_);
-
   // Find a static or instance field using the JLS resolution order
   ArtField* FindField(ObjPtr<mirror::DexCache> dex_cache, uint32_t field_idx)
       REQUIRES_SHARED(Locks::mutator_lock_);
@@ -1132,6 +1121,15 @@ class EXPORT MANAGED Class final : public Object {
   // Finds the given instance field in this class or a superclass, only searches classes that
   // have the same dex cache.
   ArtField* FindInstanceField(ObjPtr<DexCache> dex_cache, uint32_t dex_field_idx)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
+  ArtField* FindDeclaredField(ObjPtr<DexCache> dex_cache, uint32_t dex_field_idx)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
+  ArtField* FindDeclaredField(uint32_t dex_field_idx)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
+  ArtField* FindDeclaredField(std::string_view name, std::string_view type)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   ArtField* FindDeclaredInstanceField(std::string_view name, std::string_view type)
@@ -1384,7 +1382,7 @@ class EXPORT MANAGED Class final : public Object {
       REQUIRES_SHARED(Locks::mutator_lock_);
   ObjPtr<Object> GetInstanceFieldIds() REQUIRES_SHARED(Locks::mutator_lock_);
 
-  // Calculate the index in the ifields_, methods_ or sfields_ arrays a method is located at. This
+  // Calculate the index in the fields_ or methods_ arrays a method is located at. This
   // is to be used with the above Get{,OrCreate}...Ids functions.
   size_t GetStaticFieldIdOffset(ArtField* field)
       REQUIRES_SHARED(Locks::mutator_lock_);
@@ -1426,11 +1424,8 @@ class EXPORT MANAGED Class final : public Object {
   void CheckObjectAlloc() REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Unchecked editions is for root visiting.
-  LengthPrefixedArray<ArtField>* GetSFieldsPtrUnchecked() REQUIRES_SHARED(Locks::mutator_lock_);
-  IterationRange<StrideIterator<ArtField>> GetSFieldsUnchecked()
-      REQUIRES_SHARED(Locks::mutator_lock_);
-  LengthPrefixedArray<ArtField>* GetIFieldsPtrUnchecked() REQUIRES_SHARED(Locks::mutator_lock_);
-  IterationRange<StrideIterator<ArtField>> GetIFieldsUnchecked()
+  LengthPrefixedArray<ArtField>* GetFieldsPtrUnchecked() REQUIRES_SHARED(Locks::mutator_lock_);
+  IterationRange<StrideIterator<ArtField>> GetFieldsUnchecked()
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // The index in the methods_ array where the first declared virtual method is.
@@ -1514,16 +1509,16 @@ class EXPORT MANAGED Class final : public Object {
   // virtual_ methods_ for miranda methods.
   HeapReference<PointerArray> vtable_;
 
-  // instance fields
+  // instance and static fields
   //
   // These describe the layout of the contents of an Object.
   // Note that only the fields directly declared by this class are
-  // listed in ifields; fields declared by a superclass are listed in
-  // the superclass's Class.ifields.
+  // listed in `fields_`; fields declared by a superclass are listed in
+  // the superclass's `Class.fields_`.
   //
   // ArtFields are allocated as a length prefixed ArtField array, and not an array of pointers to
   // ArtFields.
-  uint64_t ifields_;
+  uint64_t fields_;
 
   // Pointer to an ArtMethod length-prefixed array. All the methods where this class is the place
   // where they are logically defined. This includes all private, static, final and virtual methods
@@ -1541,9 +1536,6 @@ class EXPORT MANAGED Class final : public Object {
   //
   // Note that this field is used by the native debugger as the unique identifier for the type.
   uint64_t methods_;
-
-  // Static fields length-prefixed array.
-  uint64_t sfields_;
 
   // Access flags; low 16 bits are defined by VM spec.
   uint32_t access_flags_;
@@ -1587,7 +1579,7 @@ class EXPORT MANAGED Class final : public Object {
   // bits contains the size shift of the primitive type.
   uint32_t primitive_type_;
 
-  // Bitmap of offsets of ifields.
+  // Bitmap of offsets of instance fields.
   uint32_t reference_instance_offsets_;
 
   // See the real definition in subtype_check_bits_and_status.h
@@ -1611,7 +1603,7 @@ class EXPORT MANAGED Class final : public Object {
   // VTableEntry embedded_vtable_[0];
   // Static fields, variable size.
   // uint32_t fields_[0];
-  // Embedded bitmap of offsets of ifields, for classes that need more than 31
+  // Embedded bitmap of offsets of instance fields, for classes that need more than 31
   // reference-offset bits. 'reference_instance_offsets_' stores the number of
   // 32-bit entries that hold the entire bitmap. We compute the offset of first
   // entry by subtracting this number from class_size_.

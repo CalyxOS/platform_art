@@ -152,13 +152,17 @@ inline void ForceRead(const T* pointer) {
 // there is an I/O error.
 std::string GetProcessStatus(const char* key);
 
-// Copy a prefix of /proc/tid/stat of the given length into buf. Return the number of bytes
-// actually read, 0 on error.
+// Copy a prefix of /proc/pid/task/tid/stat of the given length into buf. Return the number of
+// bytes actually read, 0 on error.
 size_t GetOsThreadStat(pid_t tid, char* buf, size_t len);
 
-// Return a short prefix of /proc/tid/stat as quickly and robustly as possible. Used for debugging
-// timing issues and possibly issues with /proc itself. Always atomic.
+// Return a short prefix of /proc/pid/task/tid/stat as quickly and robustly as possible. Used for
+// debugging timing issues and possibly issues with /proc itself. Always atomic.
 std::string GetOsThreadStatQuick(pid_t tid);
+
+// Given a /proc/.../stat string or prefix, such as those returned by the above, return the single
+// character representation of the thread state from that string, or '?' if it can't be found.
+char GetStateFromStatString(const std::string& stat_output);
 
 // Return a concatenation of the output of GetOsThreadStatQuick(tid) for all other tids.
 // Less robust against concurrent change, but individual stat strings should still always

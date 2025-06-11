@@ -1248,44 +1248,36 @@ TEST_F(AssemblerX86Test, Punpckhqdq) {
   DriverStr(RepeatFF(&x86::X86Assembler::punpckhqdq, "punpckhqdq %{reg2}, %{reg1}"), "punpckhqdq");
 }
 
-TEST_F(AssemblerX86Test, psllw) {
-  GetAssembler()->psllw(x86::XMM0, CreateImmediate(16));
-  DriverStr("psllw $0x10, %xmm0\n", "psllwi");
+TEST_F(AssemblerX86Test, Psllw) {
+  DriverStr(RepeatFI(&x86::X86Assembler::psllw, 4u, "psllw ${imm}, %{reg}"), "psllwi");
 }
 
-TEST_F(AssemblerX86Test, pslld) {
-  GetAssembler()->pslld(x86::XMM0, CreateImmediate(16));
-  DriverStr("pslld $0x10, %xmm0\n", "pslldi");
+TEST_F(AssemblerX86Test, Pslld) {
+  DriverStr(RepeatFI(&x86::X86Assembler::pslld, 5u, "pslld ${imm}, %{reg}"), "pslldi");
 }
 
-TEST_F(AssemblerX86Test, psllq) {
-  GetAssembler()->psllq(x86::XMM0, CreateImmediate(16));
-  DriverStr("psllq $0x10, %xmm0\n", "psllqi");
+TEST_F(AssemblerX86Test, Psllq) {
+  DriverStr(RepeatFI(&x86::X86Assembler::psllq, 6u, "psllq ${imm}, %{reg}"), "psllqi");
 }
 
-TEST_F(AssemblerX86Test, psraw) {
-  GetAssembler()->psraw(x86::XMM0, CreateImmediate(16));
-  DriverStr("psraw $0x10, %xmm0\n", "psrawi");
+TEST_F(AssemblerX86Test, Psraw) {
+  DriverStr(RepeatFI(&x86::X86Assembler::psraw, 4u, "psraw ${imm}, %{reg}"), "psrawi");
 }
 
-TEST_F(AssemblerX86Test, psrad) {
-  GetAssembler()->psrad(x86::XMM0, CreateImmediate(16));
-  DriverStr("psrad $0x10, %xmm0\n", "psradi");
+TEST_F(AssemblerX86Test, Psrad) {
+  DriverStr(RepeatFI(&x86::X86Assembler::psrad, 5u, "psrad ${imm}, %{reg}"), "psradi");
 }
 
-TEST_F(AssemblerX86Test, psrlw) {
-  GetAssembler()->psrlw(x86::XMM0, CreateImmediate(16));
-  DriverStr("psrlw $0x10, %xmm0\n", "psrlwi");
+TEST_F(AssemblerX86Test, Psrlw) {
+  DriverStr(RepeatFI(&x86::X86Assembler::psrlw, 4u, "psrlw ${imm}, %{reg}"), "psrlwi");
 }
 
-TEST_F(AssemblerX86Test, psrld) {
-  GetAssembler()->psrld(x86::XMM0, CreateImmediate(16));
-  DriverStr("psrld $0x10, %xmm0\n", "psrldi");
+TEST_F(AssemblerX86Test, Psrld) {
+  DriverStr(RepeatFI(&x86::X86Assembler::psrld, 5u, "psrld ${imm}, %{reg}"), "psrldi");
 }
 
-TEST_F(AssemblerX86Test, psrlq) {
-  GetAssembler()->psrlq(x86::XMM0, CreateImmediate(16));
-  DriverStr("psrlq $0x10, %xmm0\n", "psrlqi");
+TEST_F(AssemblerX86Test, Psrlq) {
+  DriverStr(RepeatFI(&x86::X86Assembler::psrlq, 6u, "psrlq ${imm}, %{reg}"), "psrlqi");
 }
 
 TEST_F(AssemblerX86Test, psrldq) {

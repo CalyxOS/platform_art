@@ -29,6 +29,7 @@
 #include "entrypoints/quick/runtime_entrypoints_list.h"
 #include "entrypoints/runtime_asm_entrypoints.h"
 #include "interpreter/interpreter.h"
+#include "trace_profile.h"
 
 namespace art_flags = com::android::art::flags;
 
@@ -52,13 +53,12 @@ extern "C" mirror::Object* art_quick_read_barrier_mark_reg09(mirror::Object*);
 extern "C" mirror::Object* art_quick_read_barrier_mark_reg10(mirror::Object*);
 extern "C" mirror::Object* art_quick_read_barrier_mark_reg11(mirror::Object*);
 extern "C" mirror::Object* art_quick_read_barrier_mark_reg12(mirror::Object*);
-extern "C" mirror::Object* art_quick_read_barrier_mark_reg12(mirror::Object*);
 extern "C" mirror::Object* art_quick_read_barrier_mark_reg13(mirror::Object*);
 extern "C" mirror::Object* art_quick_read_barrier_mark_reg14(mirror::Object*);
 extern "C" mirror::Object* art_quick_read_barrier_mark_reg15(mirror::Object*);
-extern "C" mirror::Object* art_quick_read_barrier_mark_reg16(mirror::Object*);
+// extern "C" mirror::Object* art_quick_read_barrier_mark_reg16(mirror::Object*); ip0 is blocked
 extern "C" mirror::Object* art_quick_read_barrier_mark_reg17(mirror::Object*);
-extern "C" mirror::Object* art_quick_read_barrier_mark_reg18(mirror::Object*);
+// extern "C" mirror::Object* art_quick_read_barrier_mark_reg18(mirror::Object*); x18 is blocked
 extern "C" mirror::Object* art_quick_read_barrier_mark_reg19(mirror::Object*);
 extern "C" mirror::Object* art_quick_read_barrier_mark_reg20(mirror::Object*);
 extern "C" mirror::Object* art_quick_read_barrier_mark_reg21(mirror::Object*);
@@ -78,6 +78,9 @@ extern "C" mirror::Object* art_quick_read_barrier_mark_introspection_gc_roots(mi
 
 extern "C" void art_quick_record_entry_trace_event();
 extern "C" void art_quick_record_exit_trace_event();
+
+extern "C" void art_quick_record_long_running_entry_trace_event();
+extern "C" void art_quick_record_long_running_exit_trace_event();
 
 extern "C" void art_quick_nop_record_entry_trace_event() {
   return;
@@ -126,8 +129,13 @@ void UpdateReadBarrierEntrypoints(QuickEntryPoints* qpoints, bool is_active) {
   qpoints->SetReadBarrierMarkReg28(is_active ? art_quick_read_barrier_mark_reg28 : nullptr);
   qpoints->SetReadBarrierMarkReg29(is_active ? art_quick_read_barrier_mark_reg29 : nullptr);
 
-  // Check that array switch cases are at appropriate offsets from the introspection entrypoint.
   DCHECK_ALIGNED(art_quick_read_barrier_mark_introspection, 512u);
+
+  // TODO(Simulator): the introspection entrypoints are not currently used in the simulator and
+  // they are not aligned correctly due to the veneer used in CALL_SYMBOL and BRANCH_SYMBOL.
+  // Re-enable these checks when the introspection entrypoints are used and tested.
+#ifndef ART_USE_RESTRICTED_MODE
+  // Check that array switch cases are at appropriate offsets from the introspection entrypoint.
   intptr_t array_diff =
       reinterpret_cast<intptr_t>(art_quick_read_barrier_mark_introspection_arrays) -
       reinterpret_cast<intptr_t>(art_quick_read_barrier_mark_introspection);
@@ -137,6 +145,7 @@ void UpdateReadBarrierEntrypoints(QuickEntryPoints* qpoints, bool is_active) {
       reinterpret_cast<intptr_t>(art_quick_read_barrier_mark_introspection_gc_roots) -
       reinterpret_cast<intptr_t>(art_quick_read_barrier_mark_introspection);
   DCHECK_EQ(BAKER_MARK_INTROSPECTION_GC_ROOT_ENTRYPOINT_OFFSET, gc_roots_diff);
+#endif  // ART_USE_RESTRICTED_MODE
   // The register 16, i.e. IP0, is reserved, so there is no art_quick_read_barrier_mark_reg16.
   // We're using the entry to hold a pointer to the introspection entrypoint instead.
   qpoints->SetReadBarrierMarkReg16(is_active ? art_quick_read_barrier_mark_introspection : nullptr);
@@ -213,18 +222,25 @@ void InitEntryPoints(JniEntryPoints* jpoints,
   if (art_flags::always_enable_profile_code()) {
     // These are used for always-on-tracing, currently only supported on arm64
     // devices.
-    qpoints->SetRecordEntryTraceEvent(art_quick_record_entry_trace_event);
-    qpoints->SetRecordExitTraceEvent(art_quick_record_exit_trace_event);
+    qpoints->SetRecordEntryTraceEvent(art_quick_nop_record_entry_trace_event);
+    qpoints->SetRecordExitTraceEvent(art_quick_nop_record_exit_trace_event);
   }
 }
 
-void UpdateLowOverheadTraceEntrypoints(QuickEntryPoints* qpoints, bool enable) {
-  if (enable) {
-    qpoints->SetRecordEntryTraceEvent(art_quick_record_entry_trace_event);
-    qpoints->SetRecordExitTraceEvent(art_quick_record_exit_trace_event);
-  } else {
-    qpoints->SetRecordEntryTraceEvent(art_quick_nop_record_entry_trace_event);
-    qpoints->SetRecordExitTraceEvent(art_quick_nop_record_exit_trace_event);
+void UpdateLowOverheadTraceEntrypoints(QuickEntryPoints* qpoints, LowOverheadTraceType type) {
+  switch (type) {
+    case LowOverheadTraceType::kAllMethods:
+      qpoints->SetRecordEntryTraceEvent(art_quick_record_entry_trace_event);
+      qpoints->SetRecordExitTraceEvent(art_quick_record_exit_trace_event);
+      break;
+    case LowOverheadTraceType::kLongRunningMethods:
+      qpoints->SetRecordEntryTraceEvent(art_quick_record_long_running_entry_trace_event);
+      qpoints->SetRecordExitTraceEvent(art_quick_record_long_running_exit_trace_event);
+      break;
+    case LowOverheadTraceType::kNone:
+      qpoints->SetRecordEntryTraceEvent(art_quick_nop_record_entry_trace_event);
+      qpoints->SetRecordExitTraceEvent(art_quick_nop_record_exit_trace_event);
+      break;
   }
 }
 

@@ -912,14 +912,14 @@ void JniCompilerTest::CompileAndRun_fooJJ_synchronizedImpl() {
   gLogVerbosity.systrace_lock_logging = true;
   InitEntryPoints(&self->tlsPtr_.jni_entrypoints,
                   &self->tlsPtr_.quick_entrypoints,
-                  self->ReadFlag(ThreadFlag::kMonitorJniEntryExit));
+                  self->ReadFlag(ThreadFlag::kMonitorJniEntryExit, std::memory_order_relaxed));
   result = env_->CallNonvirtualLongMethod(jobj_, jklass_, jmethod_, a, b);
   EXPECT_EQ(a | b, result);
   EXPECT_EQ(5, gJava_MyClassNatives_fooJJ_synchronized_calls[gCurrentJni]);
   gLogVerbosity.systrace_lock_logging = false;
   InitEntryPoints(&self->tlsPtr_.jni_entrypoints,
                   &self->tlsPtr_.quick_entrypoints,
-                  self->ReadFlag(ThreadFlag::kMonitorJniEntryExit));
+                  self->ReadFlag(ThreadFlag::kMonitorJniEntryExit, std::memory_order_relaxed));
 
   gJava_MyClassNatives_fooJJ_synchronized_calls[gCurrentJni] = 0;
 }

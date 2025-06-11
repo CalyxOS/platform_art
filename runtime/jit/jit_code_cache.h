@@ -359,8 +359,10 @@ class JitCodeCache {
 
   // Visit GC roots (except j.l.Class and j.l.String) held by JIT-ed code.
   template<typename RootVisitorType>
-  EXPORT void VisitRootTables(ArtMethod* method,
-                              RootVisitorType& visitor) NO_THREAD_SAFETY_ANALYSIS;
+  EXPORT void VisitRootTables(ArtMethod* method, RootVisitorType& visitor)
+      REQUIRES(Locks::heap_bitmap_lock_)
+      REQUIRES(!Locks::jit_mutator_lock_)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 
   void SweepRootTables(IsMarkedVisitor* visitor)
       REQUIRES(!Locks::jit_lock_)

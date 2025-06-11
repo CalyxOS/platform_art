@@ -28,6 +28,7 @@
 #include <tuple>
 #include <vector>
 
+#include "android-base/properties.h"
 #include "android-base/stringprintf.h"
 #include "art_field-inl.h"
 #include "base/aborting.h"
@@ -253,13 +254,16 @@ void ThreadList::Dump(std::ostream& os, bool dump_native_stack) {
     os << "DALVIK THREADS (" << list_.size() << "):\n";
   }
   if (self != nullptr) {
+    // Dump() can be called in any mutator lock state.
+    bool mutator_lock_held = Locks::mutator_lock_->IsSharedHeld(self);
     DumpCheckpoint checkpoint(dump_native_stack);
     // Acquire mutator lock separately for each thread, to avoid long runnable code sequence
     // without suspend checks.
-    size_t threads_running_checkpoint = RunCheckpoint(&checkpoint,
-                                                      nullptr,
-                                                      true,
-                                                      /* acquire_mutator_lock= */ true);
+    size_t threads_running_checkpoint =
+        RunCheckpoint(&checkpoint,
+                      nullptr,
+                      true,
+                      /* acquire_mutator_lock= */ !mutator_lock_held);
     if (threads_running_checkpoint != 0) {
       checkpoint.WaitForThreadsToRunThroughCheckpoint(threads_running_checkpoint);
     }
@@ -557,7 +561,7 @@ void ThreadList::RunEmptyCheckpoint() {
                 std::find(runnable_thread_ids.begin(), runnable_thread_ids.end(), tid) !=
                 runnable_thread_ids.end();
             if (is_in_runnable_thread_ids &&
-                thread->ReadFlag(ThreadFlag::kEmptyCheckpointRequest)) {
+                thread->ReadFlag(ThreadFlag::kEmptyCheckpointRequest, std::memory_order_relaxed)) {
               // Found a runnable thread that hasn't responded to the empty checkpoint request.
               // Assume it's stuck and safe to dump its stack.
               thread->Dump(LOG_STREAM(FATAL_WITHOUT_ABORT),
@@ -717,7 +721,7 @@ static constexpr unsigned kSuspendBarrierIters = kShortSuspendTimeouts ? 5 : 20;
 
 #if ART_USE_FUTEXES
 
-// Returns true if it timed out.
+// Returns true if it timed out. Times out after timeout_ns/kSuspendBarrierIters nsecs
 static bool WaitOnceForSuspendBarrier(AtomicInteger* barrier,
                                       int32_t cur_val,
                                       uint64_t timeout_ns) {
@@ -762,13 +766,21 @@ static bool WaitOnceForSuspendBarrier(AtomicInteger* barrier,
 std::optional<std::string> ThreadList::WaitForSuspendBarrier(AtomicInteger* barrier,
                                                              pid_t t,
                                                              int attempt_of_4) {
-  // Only fail after kIter timeouts, to make us robust against app freezing.
 #if ART_USE_FUTEXES
   const uint64_t start_time = NanoTime();
 #endif
   uint64_t timeout_ns =
       attempt_of_4 == 0 ? thread_suspend_timeout_ns_ : thread_suspend_timeout_ns_ / 4;
-
+  static bool is_user_build = (android::base::GetProperty("ro.build.type", "") == "user");
+  // Significantly increase timeouts in user builds, since they result in crashes.
+  // Many of these are likely to turn into ANRs, which are less informative for the developer, but
+  // friendlier to the user. We do not completely suppress timeouts, so that we avoid invisible
+  // problems for cases not covered by ANR detection, e.g. a problem in a clean-up daemon.
+  if (is_user_build) {
+    static constexpr int USER_MULTIPLIER = 2;  // Start out small, perhaps increase later if we
+                                               // still have an issue?
+    timeout_ns *= USER_MULTIPLIER;
+  }
   uint64_t avg_wait_multiplier = 1;
   uint64_t wait_multiplier = 1;
   if (attempt_of_4 != 1) {
@@ -801,10 +813,24 @@ std::optional<std::string> ThreadList::WaitForSuspendBarrier(AtomicInteger* barr
     return std::nullopt;
   }
 
+  // Extra timeout to compensate for concurrent thread dumps, so that we are less likely to time
+  // out during ANR dumps.
+  uint64_t dump_adjustment_ns = 0;
+  // Total timeout increment if we see a concurrent thread dump. Distributed evenly across
+  // remaining iterations.
+  static constexpr uint64_t kDumpWaitNSecs = 30'000'000'000ull;  // 30 seconds
+  // Replacement timeout if thread is stopped for tracing, probably by a debugger.
+  static constexpr uint64_t kTracingWaitNSecs = 7'200'000'000'000ull;  // wait a bit < 2 hours;
+
   // Long wait; gather information in case of timeout.
   std::string sampled_state = collect_state ? GetOsThreadStatQuick(t) : "";
+  if (collect_state && GetStateFromStatString(sampled_state) == 't') {
+    LOG(WARNING) << "Thread suspension nearly timed out due to Tracing stop (debugger attached?)";
+    timeout_ns = kTracingWaitNSecs;
+  }
+  // Only fail after kSuspendBarrierIters timeouts, to make us robust against app freezing.
   while (i < kSuspendBarrierIters) {
-    if (WaitOnceForSuspendBarrier(barrier, cur_val, timeout_ns)) {
+    if (WaitOnceForSuspendBarrier(barrier, cur_val, timeout_ns + dump_adjustment_ns)) {
       ++i;
 #if ART_USE_FUTEXES
       if (!kShortSuspendTimeouts) {
@@ -817,6 +843,15 @@ std::optional<std::string> ThreadList::WaitForSuspendBarrier(AtomicInteger* barr
       DCHECK_EQ(cur_val, 0);
       return std::nullopt;
     }
+    std::optional<uint64_t> last_sigquit_nanotime = Runtime::Current()->SigQuitNanoTime();
+    if (last_sigquit_nanotime.has_value() && i < kSuspendBarrierIters) {
+      // Adjust dump_adjustment_ns to reflect the number of iterations we have left and how long
+      // ago we started dumping threads.
+      uint64_t new_unscaled_adj = kDumpWaitNSecs + last_sigquit_nanotime.value() - NanoTime();
+      // Scale by the fraction of iterations still remaining.
+      dump_adjustment_ns = new_unscaled_adj * kSuspendBarrierIters / kSuspendBarrierIters - i;
+    }
+    // Keep the old dump_adjustment_ns if SigQuitNanoTime() was cleared.
   }
   uint64_t final_wait_time = NanoTime() - start_time;
   uint64_t total_wait_time = attempt_of_4 == 0 ?
@@ -877,8 +912,8 @@ void ThreadList::SuspendAll(const char* cause, bool long_suspend) {
   }
 
   // SuspendAllInternal blocks if we are in the middle of a flip.
-  DCHECK(!self->ReadFlag(ThreadFlag::kPendingFlipFunction));
-  DCHECK(!self->ReadFlag(ThreadFlag::kRunningFlipFunction));
+  DCHECK(!self->ReadFlag(ThreadFlag::kPendingFlipFunction, std::memory_order_relaxed));
+  DCHECK(!self->ReadFlag(ThreadFlag::kRunningFlipFunction, std::memory_order_relaxed));
 
   ATraceBegin((std::string("Mutator threads suspended for ") + cause).c_str());
 
@@ -1654,6 +1689,15 @@ void ThreadList::SweepInterpreterCaches(IsMarkedVisitor* visitor) const {
   MutexLock mu(Thread::Current(), *Locks::thread_list_lock_);
   for (const auto& thread : list_) {
     thread->SweepInterpreterCache(visitor);
+  }
+}
+
+void ThreadList::ClearInterpreterCaches() const {
+  Thread* self = Thread::Current();
+  Locks::mutator_lock_->AssertExclusiveHeld(self);
+  MutexLock mu(self, *Locks::thread_list_lock_);
+  for (const auto& thread : list_) {
+    thread->GetInterpreterCache()->Clear(thread);
   }
 }
 

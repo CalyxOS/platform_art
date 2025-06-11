@@ -100,12 +100,12 @@ bool GetUnboxedTypeAndValue(ObjPtr<mirror::Object> o, Primitive::Type* type, JVa
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedAssertNoThreadSuspension ants(__FUNCTION__);
   ObjPtr<mirror::Class> klass = o->GetClass();
-  ArtField* primitive_field = &klass->GetIFieldsPtr()->At(0);
-#define CASE_PRIMITIVE(primitive, abbrev, _, shorthand)         \
-  if (klass == GetBoxedPrimitiveClass(primitive)) {             \
-    *type = primitive;                                          \
-    value->Set ## shorthand(primitive_field->Get ## abbrev(o)); \
-    return true;                                                \
+#define CASE_PRIMITIVE(primitive, abbrev, java_name, shorthand)                 \
+  if (klass == GetBoxedPrimitiveClass(primitive)) {                             \
+    *type = primitive;                                                          \
+    value->Set ## shorthand(                                                    \
+        WellKnownClasses::java_lang_ ## java_name ## _value->Get ## abbrev(o)); \
+    return true;                                                                \
   }
   PRIMITIVES_LIST(CASE_PRIMITIVE)
 #undef CASE_PRIMITIVE
@@ -782,7 +782,8 @@ static bool DoMethodHandleInvokeMethod(Thread* self,
     if (called_method->IsDefaultConflicting()) {
       ThrowIncompatibleClassChangeErrorForMethodConflict(called_method);
     } else {
-      ThrowAbstractMethodError(called_method);
+      ThrowAbstractMethodError(called_method,
+                               shadow_frame.GetVRegReference(operands->GetOperand(0)));
     }
     return false;
   }

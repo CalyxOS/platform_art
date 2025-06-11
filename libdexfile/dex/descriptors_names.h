@@ -44,15 +44,15 @@ std::string MangleForJni(const std::string& s);
 std::string GetJniShortName(const std::string& class_name, const std::string& method_name);
 
 // Turn "java.lang.String" into "Ljava/lang/String;".
-std::string DotToDescriptor(const char* class_name);
+std::string DotToDescriptor(std::string_view class_name);
 
 // Turn "Ljava/lang/String;" into "java.lang.String" using the conventions of
 // java.lang.Class.getName().
-std::string DescriptorToDot(const char* descriptor);
+std::string DescriptorToDot(std::string_view descriptor);
 
 // Turn "Ljava/lang/String;" into "java/lang/String" using the opposite conventions of
 // java.lang.Class.getName().
-std::string DescriptorToName(const char* descriptor);
+std::string DescriptorToName(std::string_view descriptor);
 
 // Tests for whether 's' is a valid class name in the three common forms:
 bool IsValidBinaryClassName(const char* s);  // "java.lang.String"

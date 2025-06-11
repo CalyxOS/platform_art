@@ -2135,7 +2135,7 @@ art::ObjPtr<art::mirror::Class> Redefiner::ClassRedefinition::AllocateNewClassOb
   }
   // Finish setting up methods.
   linked_class->VisitMethods([&](art::ArtMethod* m) REQUIRES_SHARED(art::Locks::mutator_lock_) {
-    driver_->runtime_->GetInstrumentation()->InitializeMethodsCode(m, /* aot_code= */ nullptr);
+    driver_->runtime_->GetInstrumentation()->ReinitializeMethodsCode(m);
     m->SetNotIntrinsic();
     DCHECK(m->IsCopied() || m->GetDeclaringClass() == linked_class.Get())
         << m->PrettyMethod()
@@ -2573,11 +2573,10 @@ void Redefiner::ClassRedefinition::UpdateMethods(art::ObjPtr<art::mirror::Class>
     CHECK(method_id != nullptr);
     uint32_t dex_method_idx = dex_file_->GetIndexForMethodId(*method_id);
     method.SetDexMethodIndex(dex_method_idx);
-    driver_->runtime_->GetInstrumentation()->InitializeMethodsCode(&method, /*aot_code=*/ nullptr);
+    driver_->runtime_->GetInstrumentation()->ReinitializeMethodsCode(&method);
     if (method.HasCodeItem()) {
       method.SetCodeItem(
-          dex_file_->GetCodeItem(dex_file_->FindCodeItemOffset(class_def, dex_method_idx)),
-          dex_file_->IsCompactDexFile());
+          dex_file_->GetCodeItem(dex_file_->FindCodeItemOffset(class_def, dex_method_idx)));
     }
     // Clear all the intrinsics related flags.
     method.SetNotIntrinsic();
@@ -2585,21 +2584,18 @@ void Redefiner::ClassRedefinition::UpdateMethods(art::ObjPtr<art::mirror::Class>
 }
 
 void Redefiner::ClassRedefinition::UpdateFields(art::ObjPtr<art::mirror::Class> mclass) {
-  // TODO The IFields & SFields pointers should be combined like the methods_ arrays were.
-  for (auto fields_iter : {mclass->GetIFields(), mclass->GetSFields()}) {
-    for (art::ArtField& field : fields_iter) {
-      const art::dex::TypeId* new_declaring_id =
-          dex_file_->FindTypeId(field.GetDeclaringClassDescriptorView());
-      const art::dex::StringId* new_name_id = dex_file_->FindStringId(field.GetName());
-      const art::dex::TypeId* new_type_id = dex_file_->FindTypeId(field.GetTypeDescriptorView());
-      CHECK(new_name_id != nullptr && new_type_id != nullptr && new_declaring_id != nullptr);
-      const art::dex::FieldId* new_field_id =
-          dex_file_->FindFieldId(*new_declaring_id, *new_name_id, *new_type_id);
-      CHECK(new_field_id != nullptr);
-      uint32_t new_field_index = dex_file_->GetIndexForFieldId(*new_field_id);
-      // We only need to update the index since the other data in the ArtField cannot be updated.
-      field.SetDexFieldIndex(new_field_index);
-    }
+  for (art::ArtField& field : mclass->GetFields()) {
+    const art::dex::TypeId* new_declaring_id =
+        dex_file_->FindTypeId(field.GetDeclaringClassDescriptorView());
+    const art::dex::StringId* new_name_id = dex_file_->FindStringId(field.GetName());
+    const art::dex::TypeId* new_type_id = dex_file_->FindTypeId(field.GetTypeDescriptorView());
+    CHECK(new_name_id != nullptr && new_type_id != nullptr && new_declaring_id != nullptr);
+    const art::dex::FieldId* new_field_id =
+        dex_file_->FindFieldId(*new_declaring_id, *new_name_id, *new_type_id);
+    CHECK(new_field_id != nullptr);
+    uint32_t new_field_index = dex_file_->GetIndexForFieldId(*new_field_id);
+    // We only need to update the index since the other data in the ArtField cannot be updated.
+    field.SetDexFieldIndex(new_field_index);
   }
 }
 
@@ -2609,11 +2605,10 @@ void Redefiner::ClassRedefinition::CollectNewFieldAndMethodMappings(
     std::map<art::ArtField*, art::ArtField*>* field_map) {
   for (auto [new_cls, old_cls] :
        art::ZipLeft(data.GetNewClasses()->Iterate(), data.GetOldClasses()->Iterate())) {
-    for (art::ArtField& f : old_cls->GetSFields()) {
-      (*field_map)[&f] = new_cls->FindDeclaredStaticField(f.GetName(), f.GetTypeDescriptor());
-    }
-    for (art::ArtField& f : old_cls->GetIFields()) {
-      (*field_map)[&f] = new_cls->FindDeclaredInstanceField(f.GetName(), f.GetTypeDescriptor());
+    for (art::ArtField& f : old_cls->GetFields()) {
+      (*field_map)[&f] = f.IsStatic()
+          ? new_cls->FindDeclaredStaticField(f.GetName(), f.GetTypeDescriptor())
+          : new_cls->FindDeclaredInstanceField(f.GetName(), f.GetTypeDescriptor());
     }
     auto new_methods = new_cls->GetMethods(art::kRuntimePointerSize);
     for (art::ArtMethod& m : old_cls->GetMethods(art::kRuntimePointerSize)) {
@@ -2673,12 +2668,14 @@ static void CopyFields(bool is_static,
   DCHECK(!source_class->IsObjectClass() && !target_class->IsObjectClass())
       << "Should not be overriding object class fields. Target: " << target_class->PrettyClass()
       << " Source: " << source_class->PrettyClass();
-  for (art::ArtField& f : (is_static ? source_class->GetSFields() : source_class->GetIFields())) {
-    art::ArtField* new_field =
-        (is_static ? target_class->FindDeclaredStaticField(f.GetName(), f.GetTypeDescriptor())
-                   : target_class->FindDeclaredInstanceField(f.GetName(), f.GetTypeDescriptor()));
-    CHECK(new_field != nullptr) << "could not find new version of " << f.PrettyField();
-    CopyField(target, new_field, source, f);
+  for (art::ArtField& f : source_class->GetFields()) {
+    if (f.IsStatic() == is_static) {
+      art::ArtField* new_field =
+          (is_static ? target_class->FindDeclaredStaticField(f.GetName(), f.GetTypeDescriptor())
+                     : target_class->FindDeclaredInstanceField(f.GetName(), f.GetTypeDescriptor()));
+      CHECK(new_field != nullptr) << "could not find new version of " << f.PrettyField();
+      CopyField(target, new_field, source, f);
+    }
   }
   if (!is_static && !target_class->GetSuperClass()->IsObjectClass()) {
     CopyFields(
@@ -2719,8 +2716,10 @@ static void ClearFields(bool is_static,
                         art::ObjPtr<art::mirror::Class> target_class)
     REQUIRES(art::Locks::mutator_lock_) {
   DCHECK(!target_class->IsObjectClass());
-  for (art::ArtField& f : (is_static ? target_class->GetSFields() : target_class->GetIFields())) {
-    ClearField(target, f);
+  for (art::ArtField& f : target_class->GetFields()) {
+    if (f.IsStatic() == is_static) {
+      ClearField(target, f);
+    }
   }
   if (!is_static && !target_class->GetSuperClass()->IsObjectClass()) {
     ClearFields(is_static, target, target_class->GetSuperClass());
@@ -2860,27 +2859,16 @@ void Redefiner::ClassRedefinition::UpdateClassStructurally(const RedefinitionDat
           });
     } else {
       auto pred = [&](art::ArtField& f) REQUIRES(art::Locks::mutator_lock_) {
-        return std::string_view(f.GetName()) == std::string_view(field_or_method->GetName()) &&
-               std::string_view(f.GetTypeDescriptor()) ==
-                   std::string_view(field_or_method->GetTypeDescriptor());
+        return f.GetNameView() == field_or_method->GetNameView() &&
+               f.GetTypeDescriptorView() == field_or_method->GetTypeDescriptorView();
       };
-      if (field_or_method->IsStatic()) {
-        return std::any_of(
+      return std::any_of(
             replacement_classes_iter.begin(),
             replacement_classes_iter.end(),
             [&](art::ObjPtr<art::mirror::Class> cand) REQUIRES(art::Locks::mutator_lock_) {
-              auto sfields = cand->GetSFields();
-              return std::find_if(sfields.begin(), sfields.end(), pred) != sfields.end();
+              auto fields = cand->GetFields();
+              return std::find_if(fields.begin(), fields.end(), pred) != fields.end();
             });
-      } else {
-        return std::any_of(
-            replacement_classes_iter.begin(),
-            replacement_classes_iter.end(),
-            [&](art::ObjPtr<art::mirror::Class> cand) REQUIRES(art::Locks::mutator_lock_) {
-              auto ifields = cand->GetIFields();
-              return std::find_if(ifields.begin(), ifields.end(), pred) != ifields.end();
-            });
-      }
     }
   };
   // TODO Performing 2 stack-walks back to back isn't the greatest. We might want to try to combine

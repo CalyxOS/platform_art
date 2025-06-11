@@ -20,6 +20,11 @@
 
 namespace art {
 
+// The JNI entrypoint below ends up in libarttest(d).so, while the test loads
+// libarttest(d)_external.so instead. That lib depends on libarttest(d).so, so
+// its exported symbols become visible directly in it. Hence we don't need to
+// create a wrapper for the JNI method in libarttest(d)_external.so.
+
 // Native method annotated with `SampleAnnotation` in Java source.
 extern "C" JNIEXPORT void JNICALL Java_Test_nativeMethodWithAnnotation(JNIEnv*, jclass) {
   std::cout << "Java_Test_nativeMethodWithAnnotation" << std::endl;

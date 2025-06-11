@@ -16,6 +16,7 @@
 
 
 def run(ctx, args):
+  args.testlib += [args.testlib[0] + "_external"]
   ctx.default_run(args)
 
   # On gcstress configurations, an extra "JNI_OnUnload called" line may

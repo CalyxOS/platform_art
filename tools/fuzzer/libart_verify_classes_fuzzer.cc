@@ -28,6 +28,7 @@
 #include "jni/java_vm_ext.h"
 #include "noop_compiler_callbacks.h"
 #include "runtime.h"
+#include "runtime_intrinsics.h"
 #include "scoped_thread_state_change-inl.h"
 #include "verifier/class_verifier.h"
 #include "well_known_classes.h"
@@ -40,8 +41,6 @@ int skipped_gc_iterations = 0;
 // TODO: These values were obtained from local experimenting. They can be changed after
 // further investigation.
 static constexpr int kMaxSkipGCIterations = 100;
-// Global variable to signal LSAN that we are not leaking memory.
-uint8_t* allocated_signal_stack = nullptr;
 
 namespace art {
 // A class to be friends with ClassLinker and access the internal FindDexCacheDataLocked method.
@@ -121,30 +120,23 @@ extern "C" int LLVMFuzzerInitialize([[maybe_unused]] int* argc, [[maybe_unused]]
       std::make_pair("imageinstructionset",
                      reinterpret_cast<const void*>(GetInstructionSetString(art::kRuntimeISA))));
 
-  // No need for sig chain.
-  options.push_back(std::make_pair("-Xno-sig-chain", nullptr));
-
   if (!art::Runtime::Create(options, false)) {
     LOG(FATAL) << "We should always be able to create the runtime";
     UNREACHABLE();
   }
 
-  // Need well-known-classes.
-  art::WellKnownClasses::Init(art::Thread::Current()->GetJniEnv());
-  // Need a class loader. Fake that we're a compiler.
-  // Note: this will run initializers through the unstarted runtime, so make sure it's
-  //       initialized.
   art::interpreter::UnstartedRuntime::Initialize();
+  art::Runtime::Current()->GetClassLinker()->RunEarlyRootClinits(art::Thread::Current());
+  art::InitializeIntrinsics();
+  art::Runtime::Current()->RunRootClinits(art::Thread::Current());
 
+  // Check for heap corruption before running the fuzzer.
+  art::Runtime::Current()->GetHeap()->VerifyHeap();
+
+  // Runtime::Create acquired the mutator_lock_ that is normally given away when we
+  // Runtime::Start, give it away now with `TransitionFromSuspendedToRunnable` until we figure out
+  // how to start a Runtime.
   art::Thread::Current()->TransitionFromRunnableToSuspended(art::ThreadState::kNative);
-
-  // Query the current stack and add it to the global variable. Otherwise LSAN complains about a
-  // non-existing leak.
-  stack_t ss;
-  if (sigaltstack(nullptr, &ss) == -1) {
-    PLOG(FATAL) << "sigaltstack failed";
-  }
-  allocated_signal_stack = reinterpret_cast<uint8_t*>(ss.ss_sp);
 
   return 0;
 }
@@ -178,12 +170,14 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
   // Scope for the handles
   {
-    art::StackHandleScope<3> scope(soa.Self());
+    art::StackHandleScope<4> scope(soa.Self());
     art::Handle<art::mirror::ClassLoader> h_loader =
         scope.NewHandle(soa.Decode<art::mirror::ClassLoader>(class_loader));
     art::MutableHandle<art::mirror::Class> h_klass(scope.NewHandle<art::mirror::Class>(nullptr));
     art::MutableHandle<art::mirror::DexCache> h_dex_cache(
         scope.NewHandle<art::mirror::DexCache>(nullptr));
+    art::MutableHandle<art::mirror::ClassLoader> h_dex_cache_class_loader =
+        scope.NewHandle(h_loader.Get());
 
     for (art::ClassAccessor accessor : dex_file.GetClasses()) {
       h_klass.Assign(
@@ -195,12 +189,16 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         continue;
       }
       h_dex_cache.Assign(h_klass->GetDexCache());
+
+      // The class loader from the class's dex cache is different from the dex file's class loader
+      // for boot image classes e.g. java.util.AbstractCollection.
+      h_dex_cache_class_loader.Assign(h_klass->GetDexCache()->GetClassLoader());
       art::verifier::ClassVerifier::VerifyClass(soa.Self(),
                                                 /* verifier_deps= */ nullptr,
                                                 h_dex_cache->GetDexFile(),
                                                 h_klass,
                                                 h_dex_cache,
-                                                h_loader,
+                                                h_dex_cache_class_loader,
                                                 *h_klass->GetClassDef(),
                                                 runtime->GetCompilerCallbacks(),
                                                 art::verifier::HardFailLogMode::kLogWarning,

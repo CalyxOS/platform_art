@@ -93,11 +93,10 @@ TEST_F(ProxyTest, ProxyFieldHelper) {
   ASSERT_TRUE(proxyClass->IsProxyClass());
   ASSERT_TRUE(proxyClass->IsInitialized());
 
-  EXPECT_TRUE(proxyClass->GetIFieldsPtr() == nullptr);
-
-  LengthPrefixedArray<ArtField>* static_fields = proxyClass->GetSFieldsPtr();
-  ASSERT_TRUE(static_fields != nullptr);
-  ASSERT_EQ(2u, proxyClass->NumStaticFields());
+  LengthPrefixedArray<ArtField>* fields = proxyClass->GetFieldsPtr();
+  ASSERT_TRUE(fields != nullptr);
+  ASSERT_EQ(2u, proxyClass->NumFields());
+  ASSERT_EQ(0u, proxyClass->ComputeNumInstanceFields());
 
   Handle<mirror::Class> interfacesFieldClass(
       hs.NewHandle(class_linker_->FindSystemClass(soa.Self(), "[Ljava/lang/Class;")));
@@ -107,7 +106,7 @@ TEST_F(ProxyTest, ProxyFieldHelper) {
   ASSERT_TRUE(throwsFieldClass != nullptr);
 
   // Test "Class[] interfaces" field.
-  ArtField* field = &static_fields->At(0);
+  ArtField* field = &fields->At(0);
   EXPECT_STREQ("interfaces", field->GetName());
   EXPECT_STREQ("[Ljava/lang/Class;", field->GetTypeDescriptor());
   EXPECT_EQ("[Ljava/lang/Class;", field->GetTypeDescriptorView());
@@ -117,7 +116,7 @@ TEST_F(ProxyTest, ProxyFieldHelper) {
   EXPECT_FALSE(field->IsPrimitiveType());
 
   // Test "Class[][] throws" field.
-  field = &static_fields->At(1);
+  field = &fields->At(1);
   EXPECT_STREQ("throws", field->GetName());
   EXPECT_STREQ("[[Ljava/lang/Class;", field->GetTypeDescriptor());
   EXPECT_EQ("[[Ljava/lang/Class;", field->GetTypeDescriptorView());
@@ -149,10 +148,10 @@ TEST_F(ProxyTest, CheckArtMirrorFieldsOfProxyStaticFields) {
   ASSERT_TRUE(proxyClass1->IsProxyClass());
   ASSERT_TRUE(proxyClass1->IsInitialized());
 
-  LengthPrefixedArray<ArtField>* static_fields0 = proxyClass0->GetSFieldsPtr();
+  LengthPrefixedArray<ArtField>* static_fields0 = proxyClass0->GetFieldsPtr();
   ASSERT_TRUE(static_fields0 != nullptr);
   ASSERT_EQ(2u, static_fields0->size());
-  LengthPrefixedArray<ArtField>* static_fields1 = proxyClass1->GetSFieldsPtr();
+  LengthPrefixedArray<ArtField>* static_fields1 = proxyClass1->GetFieldsPtr();
   ASSERT_TRUE(static_fields1 != nullptr);
   ASSERT_EQ(2u, static_fields1->size());
 

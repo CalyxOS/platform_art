@@ -38,6 +38,7 @@
 #include "aidl/com/android/server/art/BnArtd.h"
 #include "aidl/com/android/server/art/BnArtdCancellationSignal.h"
 #include "aidl/com/android/server/art/BnArtdNotification.h"
+#include "aidl/com/android/server/art/SecureDexMetadataWithCompanionPaths.h"
 #include "android-base/result.h"
 #include "android-base/thread_annotations.h"
 #include "android-base/unique_fd.h"
@@ -138,7 +139,8 @@ class Artd : public aidl::com::android::server::art::BnArtd {
                 std::function<MountFn> mount_func = mount,
                 std::function<decltype(Restorecon)> restorecon_func = Restorecon,
                 std::optional<std::string> pre_reboot_tmp_dir = std::nullopt,
-                std::optional<std::string> init_environ_rc_path = std::nullopt)
+                std::optional<std::string> init_environ_rc_path = std::nullopt,
+                std::unique_ptr<art::tools::SystemProperties> pre_reboot_build_props = nullptr)
       : options_(std::move(options)),
         props_(std::move(props)),
         exec_utils_(std::move(exec_utils)),
@@ -148,7 +150,8 @@ class Artd : public aidl::com::android::server::art::BnArtd {
         mount_(std::move(mount_func)),
         restorecon_(std::move(restorecon_func)),
         pre_reboot_tmp_dir_(std::move(pre_reboot_tmp_dir)),
-        init_environ_rc_path_(std::move(init_environ_rc_path)) {}
+        init_environ_rc_path_(std::move(init_environ_rc_path)),
+        pre_reboot_build_props_(std::move(pre_reboot_build_props)) {}
 
   ndk::ScopedAStatus isAlive(bool* _aidl_return) override;
 
@@ -215,6 +218,10 @@ class Artd : public aidl::com::android::server::art::BnArtd {
       int32_t in_dexoptTrigger,
       aidl::com::android::server::art::GetDexoptNeededResult* _aidl_return) override;
 
+  ndk::ScopedAStatus maybeCreateSdc(
+      const aidl::com::android::server::art::OutputSecureDexMetadataCompanion& in_outputSdc)
+      override;
+
   ndk::ScopedAStatus dexopt(
       const aidl::com::android::server::art::OutputArtifacts& in_outputArtifacts,
       const std::string& in_dexFile,
@@ -238,6 +245,8 @@ class Artd : public aidl::com::android::server::art::BnArtd {
       const std::vector<aidl::com::android::server::art::ProfilePath>& in_profilesToKeep,
       const std::vector<aidl::com::android::server::art::ArtifactsPath>& in_artifactsToKeep,
       const std::vector<aidl::com::android::server::art::VdexPath>& in_vdexFilesToKeep,
+      const std::vector<aidl::com::android::server::art::SecureDexMetadataWithCompanionPaths>&
+          in_SdmSdcFilesToKeep,
       const std::vector<aidl::com::android::server::art::RuntimeArtifactsPath>&
           in_runtimeArtifactsToKeep,
       bool in_keepPreRebootStagedFiles,
@@ -246,6 +255,10 @@ class Artd : public aidl::com::android::server::art::BnArtd {
   ndk::ScopedAStatus cleanUpPreRebootStagedFiles() override;
 
   ndk::ScopedAStatus isInDalvikCache(const std::string& in_dexFile, bool* _aidl_return) override;
+
+  ndk::ScopedAStatus deleteSdmSdcFiles(
+      const aidl::com::android::server::art::SecureDexMetadataWithCompanionPaths& in_sdmSdcPaths,
+      int64_t* _aidl_return) override;
 
   ndk::ScopedAStatus deleteRuntimeArtifacts(
       const aidl::com::android::server::art::RuntimeArtifactsPath& in_runtimeArtifactsPath,
@@ -257,6 +270,10 @@ class Artd : public aidl::com::android::server::art::BnArtd {
 
   ndk::ScopedAStatus getVdexFileSize(const aidl::com::android::server::art::VdexPath& in_vdexPath,
                                      int64_t* _aidl_return) override;
+
+  ndk::ScopedAStatus getSdmFileSize(
+      const aidl::com::android::server::art::SecureDexMetadataWithCompanionPaths& in_sdmPath,
+      int64_t* _aidl_return) override;
 
   ndk::ScopedAStatus getRuntimeArtifactsSize(
       const aidl::com::android::server::art::RuntimeArtifactsPath& in_runtimeArtifactsPath,
@@ -332,7 +349,6 @@ class Artd : public aidl::com::android::server::art::BnArtd {
 
   void AddCompilerConfigFlags(const std::string& instruction_set,
                               const std::string& compiler_filter,
-                              aidl::com::android::server::art::PriorityClass priority_class,
                               const aidl::com::android::server::art::DexoptOptions& dexopt_options,
                               /*out*/ art::tools::CmdlineBuilder& args);
 
@@ -379,6 +395,7 @@ class Artd : public aidl::com::android::server::art::BnArtd {
   const std::function<decltype(Restorecon)> restorecon_;
   const std::optional<std::string> pre_reboot_tmp_dir_;
   const std::optional<std::string> init_environ_rc_path_;
+  std::unique_ptr<art::tools::SystemProperties> pre_reboot_build_props_;
 };
 
 // A class for getting system properties from a `build.prop` file.

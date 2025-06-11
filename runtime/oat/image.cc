@@ -30,6 +30,7 @@
 #include "mirror/object-inl.h"
 #include "mirror/object_array-inl.h"
 #include "mirror/object_array.h"
+#include "oat.h"
 
 namespace art HIDDEN {
 
@@ -72,7 +73,7 @@ ImageHeader::ImageHeader(uint32_t image_reservation_size,
   CHECK_EQ(image_begin, RoundUp(image_begin, kElfSegmentAlignment));
   if (oat_checksum != 0u) {
     CHECK_EQ(oat_file_begin, RoundUp(oat_file_begin, kElfSegmentAlignment));
-    CHECK_EQ(oat_data_begin, RoundUp(oat_data_begin, kElfSegmentAlignment));
+    CHECK_EQ(oat_data_begin, RoundUp(oat_data_begin, alignof(OatHeader)));
     CHECK_LT(image_roots, oat_file_begin);
     CHECK_LE(oat_file_begin, oat_data_begin);
     CHECK_LT(oat_data_begin, oat_data_end);

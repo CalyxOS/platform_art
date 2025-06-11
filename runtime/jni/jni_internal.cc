@@ -43,6 +43,7 @@
 #include "handle_scope.h"
 #include "hidden_api.h"
 #include "indirect_reference_table-inl.h"
+#include "instrumentation.h"
 #include "interpreter/interpreter.h"
 #include "java_vm_ext.h"
 #include "jni_env_ext.h"
@@ -494,7 +495,7 @@ ArtMethod* FindMethodJNI(const ScopedObjectAccess& soa,
     method = c->FindClassMethod(name, sig, pointer_size);
   }
   if (method != nullptr &&
-      ShouldDenyAccessToMember(method, soa.Self(), hiddenapi::AccessMethod::kNone)) {
+      ShouldDenyAccessToMember(method, soa.Self(), hiddenapi::AccessMethod::kCheckWithPolicy)) {
     // The resolved method that we have found cannot be accessed due to
     // hiddenapi (typically it is declared up the hierarchy and is not an SDK
     // method). Try to find an interface method from the implemented interfaces which is
@@ -2701,7 +2702,13 @@ class JNI {
         // TODO: make this a hard register error in the future.
       }
 
-      if (is_class_loader_namespace_natively_bridged) {
+      // It is possible to link a class with native methods from a library loaded by
+      // a different classloader. In this case IsClassLoaderNamespaceNativelyBridged
+      // fails detect if native bridge is enabled and may return false.
+      // For this reason we always check method with native bridge (see b/393035780
+      // for details).
+      if (is_class_loader_namespace_natively_bridged ||
+          android::NativeBridgeIsNativeBridgeFunctionPointer(fnPtr)) {
         fnPtr = GenerateNativeBridgeTrampoline(fnPtr, m);
       }
       const void* final_function_ptr = class_linker->RegisterNative(soa.Self(), m, fnPtr);

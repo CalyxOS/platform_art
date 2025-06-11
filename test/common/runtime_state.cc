@@ -164,6 +164,19 @@ extern "C" JNIEXPORT jboolean JNICALL Java_Main_compiledWithOptimizing(JNIEnv* e
   return JNI_TRUE;
 }
 
+static ArtMethod* GetMethod(ScopedObjectAccess& soa, jclass cls, const ScopedUtfChars& chars)
+    REQUIRES_SHARED(Locks::mutator_lock_) {
+  CHECK(chars.c_str() != nullptr);
+  ArtMethod* method = soa.Decode<mirror::Class>(cls)->FindDeclaredDirectMethodByName(
+      chars.c_str(), kRuntimePointerSize);
+  if (method == nullptr) {
+    method = soa.Decode<mirror::Class>(cls)->FindDeclaredVirtualMethodByName(chars.c_str(),
+                                                                             kRuntimePointerSize);
+  }
+  DCHECK(method != nullptr) << "Unable to find method called " << chars.c_str();
+  return method;
+}
+
 extern "C" JNIEXPORT jboolean JNICALL Java_Main_isAotCompiled(JNIEnv* env,
                                                               jclass,
                                                               jclass cls,
@@ -172,27 +185,13 @@ extern "C" JNIEXPORT jboolean JNICALL Java_Main_isAotCompiled(JNIEnv* env,
   ScopedObjectAccess soa(self);
   ScopedUtfChars chars(env, method_name);
   CHECK(chars.c_str() != nullptr);
-  ArtMethod* method = soa.Decode<mirror::Class>(cls)->FindDeclaredDirectMethodByName(
-        chars.c_str(), kRuntimePointerSize);
+  ArtMethod* method = GetMethod(soa, cls, chars);
   const void* oat_code = method->GetOatMethodQuickCode(kRuntimePointerSize);
   if (oat_code == nullptr) {
     return false;
   }
   const void* actual_code = Runtime::Current()->GetInstrumentation()->GetCodeForInvoke(method);
   return actual_code == oat_code;
-}
-
-static ArtMethod* GetMethod(ScopedObjectAccess& soa, jclass cls, const ScopedUtfChars& chars)
-    REQUIRES_SHARED(Locks::mutator_lock_) {
-  CHECK(chars.c_str() != nullptr);
-  ArtMethod* method = soa.Decode<mirror::Class>(cls)->FindDeclaredDirectMethodByName(
-        chars.c_str(), kRuntimePointerSize);
-  if (method == nullptr) {
-    method = soa.Decode<mirror::Class>(cls)->FindDeclaredVirtualMethodByName(
-        chars.c_str(), kRuntimePointerSize);
-  }
-  DCHECK(method != nullptr) << "Unable to find method called " << chars.c_str();
-  return method;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL Java_Main_hasJitCompiledEntrypoint(JNIEnv* env,
@@ -458,7 +457,7 @@ extern "C" JNIEXPORT void JNICALL Java_Main_deoptimizeNativeMethod(JNIEnv* env,
   ScopedUtfChars chars(env, method_name);
   ArtMethod* method = GetMethod(soa, cls, chars);
   CHECK(method->IsNative());
-  Runtime::Current()->GetInstrumentation()->InitializeMethodsCode(method, /*aot_code=*/ nullptr);
+  Runtime::Current()->GetInstrumentation()->ReinitializeMethodsCode(method);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL Java_Main_isDebuggable(JNIEnv*, jclass) {

@@ -44,13 +44,6 @@
 #include "AvailabilityMacros.h"  // For MAC_OS_X_VERSION_MAX_ALLOWED
 #endif
 
-#if defined(__BIONIC__)
-// membarrier(2) is only supported for target builds (b/111199492).
-#include <linux/membarrier.h>
-// NOLINTNEXTLINE - inclusion of syscall is dependent on arch
-#include <sys/syscall.h>
-#endif
-
 #if defined(__linux__)
 #include <linux/unistd.h>
 // NOLINTNEXTLINE - inclusion of syscall is dependent on arch
@@ -167,12 +160,17 @@ bool FlushCpuCaches(void* begin, void* end) {
 
 #if defined(__linux__)
 bool IsKernelVersionAtLeast(int reqd_major, int reqd_minor) {
-  struct utsname uts;
-  int major, minor;
-  CHECK_EQ(uname(&uts), 0);
-  CHECK_EQ(strcmp(uts.sysname, "Linux"), 0);
-  CHECK_EQ(sscanf(uts.release, "%d.%d:", &major, &minor), 2);
-  return major > reqd_major || (major == reqd_major && minor >= reqd_minor);
+  static auto version = []() -> std::pair<int, int> {
+    struct utsname uts;
+    int res, major, minor;
+    res = uname(&uts);
+    CHECK_EQ(res, 0);
+    CHECK_EQ(strcmp(uts.sysname, "Linux"), 0);
+    res = sscanf(uts.release, "%d.%d:", &major, &minor);
+    CHECK_EQ(res, 2);
+    return std::make_pair(major, minor);
+  }();
+  return version >= std::make_pair(reqd_major, reqd_minor);
 }
 #endif
 
@@ -406,17 +404,29 @@ size_t GetOsThreadStat(pid_t tid, char* buf, size_t len) {
 }
 
 std::string GetOsThreadStatQuick(pid_t tid) {
+#if defined(__linux__)
   static constexpr int BUF_SIZE = 100;
   char buf[BUF_SIZE];
-#if defined(__linux__)
   if (GetOsThreadStat(tid, buf, BUF_SIZE) == 0) {
     snprintf(buf, BUF_SIZE, "Unknown state: %d", tid);
   }
+  return buf;
 #else
   UNUSED(tid);
-  strcpy(buf, "Unknown state");  // snprintf may not be usable.
+  return "Unknown state";
 #endif
-  return buf;
+}
+
+char GetStateFromStatString(const std::string& stat_output) {
+  size_t rparen_pos = stat_output.find(")");
+  if (rparen_pos == std::string::npos || rparen_pos >= stat_output.length() - 3) {
+    return '?';
+  }
+  size_t state_pos = stat_output.find_first_not_of(" ", rparen_pos + 1);
+  if (rparen_pos == std::string::npos) {
+    return '?';
+  }
+  return stat_output[state_pos];
 }
 
 std::string GetOtherThreadOsStats() {

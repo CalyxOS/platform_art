@@ -144,7 +144,7 @@ void SuperblockCloner::DeepCloneEnvironmentWithRemapping(HInstruction* copy_inst
     }
     copy_env->SetRawEnvAt(i, env_input);
     if (env_input != nullptr) {
-      env_input->AddEnvUseAt(copy_env, i);
+      env_input->AddEnvUseAt(graph_->GetAllocator(), copy_env, i);
     }
   }
   // InsertRawEnvironment assumes that instruction already has an environment that's why we use
@@ -224,40 +224,6 @@ void SuperblockCloner::RemapCopyInternalEdge(HBasicBlock* orig_block,
     HPhi* orig_phi = it.Current()->AsPhi();
     HInstruction* orig_phi_input = orig_phi->InputAt(orig_index);
     orig_phi->AddInput(orig_phi_input);
-  }
-}
-
-bool SuperblockCloner::IsRemapInfoForVersioning() const {
-  return remap_incoming_->empty() &&
-         remap_orig_internal_->empty() &&
-         remap_copy_internal_->empty();
-}
-
-void SuperblockCloner::CopyIncomingEdgesForVersioning() {
-  for (uint32_t orig_block_id : orig_bb_set_.Indexes()) {
-    HBasicBlock* orig_block = GetBlockById(orig_block_id);
-    size_t incoming_edge_count = 0;
-    for (HBasicBlock* orig_pred : orig_block->GetPredecessors()) {
-      uint32_t orig_pred_id = orig_pred->GetBlockId();
-      if (IsInOrigBBSet(orig_pred_id)) {
-        continue;
-      }
-
-      HBasicBlock* copy_block = GetBlockCopy(orig_block);
-      // This corresponds to the requirement on the order of predecessors: all the incoming
-      // edges must be seen before the internal ones. This is always true for natural loops.
-      // TODO: remove this requirement.
-      DCHECK_EQ(orig_block->GetPredecessorIndexOf(orig_pred), incoming_edge_count);
-      for (HInstructionIterator it(orig_block->GetPhis()); !it.Done(); it.Advance()) {
-        HPhi* orig_phi = it.Current()->AsPhi();
-        HPhi* copy_phi = GetInstrCopy(orig_phi)->AsPhi();
-        HInstruction* orig_phi_input = orig_phi->InputAt(incoming_edge_count);
-        // Add the corresponding input of the original phi to the copy one.
-        copy_phi->AddInput(orig_phi_input);
-      }
-      copy_block->AddPredecessor(orig_pred);
-      incoming_edge_count++;
-    }
   }
 }
 
@@ -484,12 +450,6 @@ void SuperblockCloner::FindAndSetLocalAreaForAdjustments() {
 }
 
 void SuperblockCloner::RemapEdgesSuccessors() {
-  // By this stage all the blocks have been copied, copy phis - created with no inputs;
-  // no copy edges have been created so far.
-  if (IsRemapInfoForVersioning()) {
-    CopyIncomingEdgesForVersioning();
-  }
-
   // Redirect incoming edges.
   for (HEdge e : *remap_incoming_) {
     HBasicBlock* orig_block = GetBlockById(e.GetFrom());
@@ -897,7 +857,7 @@ bool SuperblockCloner::IsSubgraphClonable() const {
   return true;
 }
 
-// Checks that loop unrolling/peeling/versioning is being conducted.
+// Checks that loop unrolling/peeling is being conducted.
 bool SuperblockCloner::IsFastCase() const {
   // Check that all the basic blocks belong to the same loop.
   bool flag = false;
@@ -914,13 +874,9 @@ bool SuperblockCloner::IsFastCase() const {
     }
   }
 
-  // Check that orig_bb_set_ corresponds to loop peeling/unrolling/versioning.
+  // Check that orig_bb_set_ corresponds to loop peeling/unrolling.
   if (common_loop_info == nullptr || !orig_bb_set_.SameBitsSet(&common_loop_info->GetBlocks())) {
     return false;
-  }
-
-  if (IsRemapInfoForVersioning()) {
-    return true;
   }
 
   bool peeling_or_unrolling = false;
@@ -1171,9 +1127,6 @@ HBasicBlock* LoopClonerHelper::DoLoopTransformationImpl(TransformationKind trans
       case TransformationKind::kUnrolling:
         oss<< "unrolling";
         break;
-      case TransformationKind::kVersioning:
-        oss << "versioning";
-        break;
     }
     oss << " was applied to the loop <" << loop_header->GetBlockId() << ">.";
     LOG(INFO) << oss.str();
@@ -1185,14 +1138,11 @@ HBasicBlock* LoopClonerHelper::DoLoopTransformationImpl(TransformationKind trans
   HEdgeSet remap_copy_internal(graph->GetAllocator()->Adapter(kArenaAllocSuperblockCloner));
   HEdgeSet remap_incoming(graph->GetAllocator()->Adapter(kArenaAllocSuperblockCloner));
 
-  // No remapping needed for loop versioning.
-  if (transformation != TransformationKind::kVersioning) {
-    CollectRemappingInfoForPeelUnroll(transformation == TransformationKind::kUnrolling,
-                                      loop_info_,
-                                      &remap_orig_internal,
-                                      &remap_copy_internal,
-                                      &remap_incoming);
-  }
+  CollectRemappingInfoForPeelUnroll(transformation == TransformationKind::kUnrolling,
+                                    loop_info_,
+                                    &remap_orig_internal,
+                                    &remap_copy_internal,
+                                    &remap_incoming);
 
   cloner_.SetSuccessorRemappingInfo(&remap_orig_internal, &remap_copy_internal, &remap_incoming);
   cloner_.Run();

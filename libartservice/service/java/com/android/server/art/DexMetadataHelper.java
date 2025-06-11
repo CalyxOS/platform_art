@@ -72,10 +72,12 @@ public class DexMetadataHelper {
                         dmPath, DexMetadataConfig.parseFrom(stream), getType(zipFile));
             }
         } catch (IOException e) {
-            if (!(e instanceof FileNotFoundException || e instanceof NoSuchFileException)) {
+            if (e instanceof FileNotFoundException || e instanceof NoSuchFileException) {
+                return getDefaultDexMetadataInfo(DexMetadata.TYPE_NONE);
+            } else {
                 AsLog.e(String.format("Failed to read dm file '%s'", realDmPath), e);
+                return getDefaultDexMetadataInfo(DexMetadata.TYPE_ERROR);
             }
-            return getDefaultDexMetadataInfo(DexMetadata.TYPE_ERROR);
         }
     }
 

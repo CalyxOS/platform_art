@@ -149,7 +149,7 @@ TEST_F(ParsedOptionsTest, ParsedOptionsGenerationalCC) {
   EXPECT_TRUE(map.Exists(Opt::GcOption));
 
   XGcOption xgc = map.GetOrDefault(Opt::GcOption);
-  ASSERT_TRUE(xgc.generational_cc);
+  ASSERT_TRUE(xgc.generational_gc);
 }
 
 TEST_F(ParsedOptionsTest, ParsedOptionsInstructionSet) {

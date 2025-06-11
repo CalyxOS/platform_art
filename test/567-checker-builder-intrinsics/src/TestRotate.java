@@ -281,7 +281,7 @@ public class TestRotate {
   /// CHECK-START: int TestRotate.$inline$rotateLeftBoolean(boolean, int) builder (after)
   /// CHECK-NOT:                      InvokeStaticOrDirect
 
-  /// CHECK-START: int TestRotate.$inline$rotateLeftBoolean(boolean, int) select_generator (after)
+  /// CHECK-START: int TestRotate.$inline$rotateLeftBoolean(boolean, int) control_flow_simplifier (after)
   /// CHECK:         <<ArgVal:z\d+>>  ParameterValue
   /// CHECK:         <<ArgDist:i\d+>> ParameterValue
   /// CHECK-DAG:     <<Zero:i\d+>>    IntConstant 0
@@ -290,7 +290,7 @@ public class TestRotate {
   /// CHECK-DAG:     <<Result:i\d+>>  Rol [<<SelVal>>,<<ArgDist>>]
   /// CHECK-DAG:                      Return [<<Result>>]
 
-  /// CHECK-START: int TestRotate.$inline$rotateLeftBoolean(boolean, int) select_generator (after)
+  /// CHECK-START: int TestRotate.$inline$rotateLeftBoolean(boolean, int) control_flow_simplifier (after)
   /// CHECK-NOT:                      Phi
 
   /// CHECK-START: int TestRotate.$inline$rotateLeftBoolean(boolean, int) instruction_simplifier$before_codegen (after)
@@ -522,7 +522,7 @@ public class TestRotate {
   /// CHECK-START: int TestRotate.rotateRightBoolean(boolean, int) builder (after)
   /// CHECK-NOT:                      InvokeStaticOrDirect
 
-  /// CHECK-START: int TestRotate.rotateRightBoolean(boolean, int) select_generator (after)
+  /// CHECK-START: int TestRotate.rotateRightBoolean(boolean, int) control_flow_simplifier (after)
   /// CHECK:         <<ArgVal:z\d+>>  ParameterValue
   /// CHECK:         <<ArgDist:i\d+>> ParameterValue
   /// CHECK-DAG:     <<Zero:i\d+>>    IntConstant 0
@@ -531,7 +531,7 @@ public class TestRotate {
   /// CHECK-DAG:     <<Result:i\d+>>  Ror [<<SelVal>>,<<ArgDist>>]
   /// CHECK-DAG:                      Return [<<Result>>]
 
-  /// CHECK-START: int TestRotate.rotateRightBoolean(boolean, int) select_generator (after)
+  /// CHECK-START: int TestRotate.rotateRightBoolean(boolean, int) control_flow_simplifier (after)
   /// CHECK-NOT:                     Phi
 
   /// CHECK-START: int TestRotate.rotateRightBoolean(boolean, int) instruction_simplifier$before_codegen (after)

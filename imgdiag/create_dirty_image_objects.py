@@ -101,6 +101,18 @@ def process_dirty_entries(entries, sort_type):
 
   return (dirty_obj_lines, sort_keys)
 
+def split_dirty_objects(dirty_objects):
+  art_objects = list()
+  framework_objects = list()
+  for obj in dirty_objects:
+    obj_without_location = obj.split(' ', 1)[1]
+    is_art_module_object = obj.startswith('/apex/com.android.art/')
+    is_primitive_array = obj.startswith('primitive')
+    if is_art_module_object or is_primitive_array:
+      art_objects.append(obj_without_location)
+    else:
+      framework_objects.append(obj_without_location)
+  return art_objects, framework_objects
 
 def main():
   parser = argparse.ArgumentParser(
@@ -171,6 +183,12 @@ def main():
 
   with open(args.output_filename, 'w') as f:
     f.writelines(dirty_image_objects)
+
+  art_objs, framework_objs = split_dirty_objects(dirty_image_objects)
+  with open('art_' + args.output_filename, 'w') as f:
+    f.writelines(art_objs)
+  with open('framework_' + args.output_filename, 'w') as f:
+    f.writelines(framework_objs)
 
   if args.print_stats:
     print(','.join(k for k, v in entries), ',obj_count')

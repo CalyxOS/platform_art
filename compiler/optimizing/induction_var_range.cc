@@ -48,10 +48,11 @@ static bool IsSafeDiv(int32_t c1, int32_t c2) {
 
 /** Computes a * b for a,b > 0 (at least until first overflow happens). */
 static int64_t SafeMul(int64_t a, int64_t b, /*out*/ bool* overflow) {
-  if (a > 0 && b > 0 && a > (std::numeric_limits<int64_t>::max() / b)) {
+  int64_t result;
+  if (__builtin_mul_overflow(a, b, &result)) {
     *overflow = true;
   }
-  return a * b;
+  return result;
 }
 
 /** Returns b^e for b,e > 0. Sets overflow if arithmetic wrap-around occurred. */

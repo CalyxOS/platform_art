@@ -193,7 +193,7 @@ bool RegType::IsObjectArrayTypes() const {
     return down_cast<const UnresolvedMergedReferenceType&>(*this).IsObjectArrayTypesImpl();
   } else if (IsUnresolvedTypes()) {
     // Primitive arrays will always resolve.
-    DCHECK(descriptor_[1] == 'L' || descriptor_[1] == '[');
+    DCHECK_IMPLIES(descriptor_[0] == '[', descriptor_[1] == 'L' || descriptor_[1] == '[');
     return descriptor_[0] == '[';
   } else if (HasClass()) {
     ObjPtr<mirror::Class> type = GetClass();

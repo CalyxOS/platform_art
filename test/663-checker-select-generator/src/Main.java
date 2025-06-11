@@ -21,13 +21,13 @@ public class Main {
   /// CHECK-START: int Main.$noinline$testSimpleDiamondSameValue(boolean) builder (after)
   /// CHECK-NOT: Phi
 
-  /// CHECK-START: int Main.$noinline$testSimpleDiamondSameValue(boolean) select_generator (before)
+  /// CHECK-START: int Main.$noinline$testSimpleDiamondSameValue(boolean) control_flow_simplifier (before)
   /// CHECK-NOT: Phi
 
-  /// CHECK-START: int Main.$noinline$testSimpleDiamondSameValue(boolean) select_generator (after)
+  /// CHECK-START: int Main.$noinline$testSimpleDiamondSameValue(boolean) control_flow_simplifier (after)
   /// CHECK-NOT: Phi
 
-  /// CHECK-START: int Main.$noinline$testSimpleDiamondSameValue(boolean) select_generator (after)
+  /// CHECK-START: int Main.$noinline$testSimpleDiamondSameValue(boolean) control_flow_simplifier (after)
   /// CHECK-NOT: Select
   private static int $noinline$testSimpleDiamondSameValue(boolean bool_param) {
     int return_value;
@@ -41,14 +41,14 @@ public class Main {
 
   // Check that we generate a select for a simple diamond pattern, with different values.
 
-  /// CHECK-START: int Main.$noinline$testSimpleDiamondDifferentValue(boolean) select_generator (before)
+  /// CHECK-START: int Main.$noinline$testSimpleDiamondDifferentValue(boolean) control_flow_simplifier (before)
   /// CHECK-DAG:   <<Const10:i\d+>> IntConstant 10
   /// CHECK-DAG:   <<Const20:i\d+>> IntConstant 20
   /// CHECK-DAG:   <<Phi:i\d+>>     Phi [<<Arg1:i\d+>>,<<Arg2:i\d+>>]
   /// CHECK-DAG:                    Return [<<Phi>>]
   /// CHECK-EVAL:  set(["<<Arg1>>","<<Arg2>>"]) == set(["<<Const10>>","<<Const20>>"])
 
-  /// CHECK-START: int Main.$noinline$testSimpleDiamondDifferentValue(boolean) select_generator (after)
+  /// CHECK-START: int Main.$noinline$testSimpleDiamondDifferentValue(boolean) control_flow_simplifier (after)
   /// CHECK-DAG:   <<Bool:z\d+>>    ParameterValue
   /// CHECK-DAG:   <<Const10:i\d+>> IntConstant 10
   /// CHECK-DAG:   <<Const20:i\d+>> IntConstant 20
@@ -70,13 +70,13 @@ public class Main {
   /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValue(boolean, boolean) builder (after)
   /// CHECK-NOT: Phi
 
-  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValue(boolean, boolean) select_generator (before)
+  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValue(boolean, boolean) control_flow_simplifier (before)
   /// CHECK-NOT: Phi
 
-  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValue(boolean, boolean) select_generator (after)
+  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValue(boolean, boolean) control_flow_simplifier (after)
   /// CHECK-NOT: Phi
 
-  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValue(boolean, boolean) select_generator (after)
+  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValue(boolean, boolean) control_flow_simplifier (after)
   /// CHECK-NOT: Select
   private static int $noinline$testDoubleDiamondSameValue(boolean bool_param_1, boolean bool_param_2) {
       int return_value;
@@ -94,21 +94,20 @@ public class Main {
 
   // Check that we generate a select for a double diamond pattern, with a different value in the outer branch.
 
-  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValueButNotAllOuter(boolean, boolean) select_generator (before)
+  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValueButNotAllOuter(boolean, boolean) control_flow_simplifier (before)
   /// CHECK-DAG:   <<Const10:i\d+>> IntConstant 10
   /// CHECK-DAG:   <<Const20:i\d+>> IntConstant 20
   /// CHECK-DAG:   <<Phi:i\d+>>     Phi [<<Arg1:i\d+>>,<<Arg2:i\d+>>,<<Arg3:i\d+>>]
   /// CHECK-DAG:                    Return [<<Phi>>]
   /// CHECK-EVAL:  set(["<<Arg1>>","<<Arg2>>","<<Arg3>>"]) == set(["<<Const10>>","<<Const20>>","<<Const20>>"])
 
-  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValueButNotAllOuter(boolean, boolean) select_generator (after)
+  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValueButNotAllOuter(boolean, boolean) control_flow_simplifier (after)
   /// CHECK-DAG:   <<Bool1:z\d+>>   ParameterValue
   /// CHECK-DAG:   <<Bool2:z\d+>>   ParameterValue
   /// CHECK-DAG:   <<Const10:i\d+>> IntConstant 10
   /// CHECK-DAG:   <<Const20:i\d+>> IntConstant 20
-  /// CHECK-DAG:   <<Select:i\d+>>  Select [<<Const20>>,<<Const20>>,<<Bool2>>]
-  /// CHECK-DAG:   <<Select2:i\d+>> Select [<<Select>>,<<Const10>>,<<Bool1>>]
-  /// CHECK-DAG:                    Return [<<Select2>>]
+  /// CHECK-DAG:   <<Select:i\d+>>  Select [<<Const20>>,<<Const10>>,<<Bool1>>]
+  /// CHECK-DAG:                    Return [<<Select>>]
   private static int $noinline$testDoubleDiamondSameValueButNotAllOuter(boolean bool_param_1, boolean bool_param_2) {
       int return_value;
     if (bool_param_1) {
@@ -125,14 +124,14 @@ public class Main {
 
   // Check that we generate a select for a double diamond pattern, with a different value in the inner branch.
 
-  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValueButNotAllInner(boolean, boolean) select_generator (before)
+  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValueButNotAllInner(boolean, boolean) control_flow_simplifier (before)
   /// CHECK-DAG:   <<Const10:i\d+>> IntConstant 10
   /// CHECK-DAG:   <<Const20:i\d+>> IntConstant 20
   /// CHECK-DAG:   <<Phi:i\d+>>     Phi [<<Arg1:i\d+>>,<<Arg2:i\d+>>,<<Arg3:i\d+>>]
   /// CHECK-DAG:                    Return [<<Phi>>]
   /// CHECK-EVAL:  set(["<<Arg1>>","<<Arg2>>","<<Arg3>>"]) == set(["<<Const10>>","<<Const20>>","<<Const20>>"])
 
-  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValueButNotAllInner(boolean, boolean) select_generator (after)
+  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValueButNotAllInner(boolean, boolean) control_flow_simplifier (after)
   /// CHECK-DAG:   <<Bool1:z\d+>>   ParameterValue
   /// CHECK-DAG:   <<Bool2:z\d+>>   ParameterValue
   /// CHECK-DAG:   <<Const10:i\d+>> IntConstant 10
@@ -156,7 +155,7 @@ public class Main {
 
   // Check that we generate a select for a double diamond pattern, with a all different values.
 
-  /// CHECK-START: int Main.$noinline$testDoubleDiamondDifferentValue(boolean, boolean) select_generator (before)
+  /// CHECK-START: int Main.$noinline$testDoubleDiamondDifferentValue(boolean, boolean) control_flow_simplifier (before)
   /// CHECK-DAG:   <<Const10:i\d+>> IntConstant 10
   /// CHECK-DAG:   <<Const20:i\d+>> IntConstant 20
   /// CHECK-DAG:   <<Const30:i\d+>> IntConstant 30
@@ -164,7 +163,7 @@ public class Main {
   /// CHECK-DAG:                    Return [<<Phi>>]
   /// CHECK-EVAL:  set(["<<Arg1>>","<<Arg2>>","<<Arg3>>"]) == set(["<<Const10>>","<<Const20>>","<<Const30>>"])
 
-  /// CHECK-START: int Main.$noinline$testDoubleDiamondDifferentValue(boolean, boolean) select_generator (after)
+  /// CHECK-START: int Main.$noinline$testDoubleDiamondDifferentValue(boolean, boolean) control_flow_simplifier (after)
   /// CHECK-DAG:   <<Bool1:z\d+>>   ParameterValue
   /// CHECK-DAG:   <<Bool2:z\d+>>   ParameterValue
   /// CHECK-DAG:   <<Const10:i\d+>> IntConstant 10
@@ -200,7 +199,7 @@ public class Main {
   /// CHECK:       Return [<<Const10>>]
   /// CHECK:       Return [<<Const10>>]
 
-  /// CHECK-START: int Main.$noinline$testSimpleDiamondSameValueWithReturn(boolean) select_generator (after)
+  /// CHECK-START: int Main.$noinline$testSimpleDiamondSameValueWithReturn(boolean) control_flow_simplifier (after)
   /// CHECK-DAG:   <<Bool:z\d+>>   ParameterValue
   /// CHECK-DAG:   <<Const10:i\d+>> IntConstant 10
   /// CHECK-DAG:   <<Select:i\d+>>  Select [<<Const10>>,<<Const10>>,<<Bool>>]
@@ -222,13 +221,13 @@ public class Main {
 
   // Same as testSimpleDiamondDifferentValue, but branches return.
 
-  /// CHECK-START: int Main.$noinline$testSimpleDiamondDifferentValueWithReturn(boolean) select_generator (before)
+  /// CHECK-START: int Main.$noinline$testSimpleDiamondDifferentValueWithReturn(boolean) control_flow_simplifier (before)
   /// CHECK-DAG:   <<Const10:i\d+>> IntConstant 10
   /// CHECK-DAG:   <<Const20:i\d+>> IntConstant 20
   /// CHECK-DAG:                    Return [<<Const10>>]
   /// CHECK-DAG:                    Return [<<Const20>>]
 
-  /// CHECK-START: int Main.$noinline$testSimpleDiamondDifferentValueWithReturn(boolean) select_generator (after)
+  /// CHECK-START: int Main.$noinline$testSimpleDiamondDifferentValueWithReturn(boolean) control_flow_simplifier (after)
   /// CHECK-DAG:   <<Bool:z\d+>>    ParameterValue
   /// CHECK-DAG:   <<Const10:i\d+>> IntConstant 10
   /// CHECK-DAG:   <<Const20:i\d+>> IntConstant 20
@@ -249,7 +248,7 @@ public class Main {
   /// CHECK:       Return [<<Const10>>]
   /// CHECK:       Return [<<Const10>>]
 
-  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValueWithReturn(boolean, boolean) select_generator (after)
+  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValueWithReturn(boolean, boolean) control_flow_simplifier (after)
   /// CHECK-DAG:   <<Bool1:z\d+>>   ParameterValue
   /// CHECK-DAG:   <<Bool2:z\d+>>   ParameterValue
   /// CHECK-DAG:   <<Const10:i\d+>> IntConstant 10
@@ -278,7 +277,7 @@ public class Main {
 
   // Same as testDoubleDiamondSameValueButNotAllOuter, but branches return.
 
-  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValueButNotAllOuterWithReturn(boolean, boolean) select_generator (before)
+  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValueButNotAllOuterWithReturn(boolean, boolean) control_flow_simplifier (before)
   /// CHECK-DAG:   <<Const10:i\d+>> IntConstant 10
   /// CHECK-DAG:   <<Const20:i\d+>> IntConstant 20
   /// CHECK-DAG:                    Return [<<Const10>>]
@@ -286,12 +285,12 @@ public class Main {
   /// CHECK-DAG:                    Return [<<Const20>>]
 
   // Note that we have 3 returns as D8 only merges when the line positions are equal.
-  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValueButNotAllOuterWithReturn(boolean, boolean) select_generator (before)
+  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValueButNotAllOuterWithReturn(boolean, boolean) control_flow_simplifier (before)
   /// CHECK:                    Return
   /// CHECK:                    Return
   /// CHECK:                    Return
 
-  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValueButNotAllOuterWithReturn(boolean, boolean) select_generator (after)
+  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValueButNotAllOuterWithReturn(boolean, boolean) control_flow_simplifier (after)
   /// CHECK-DAG:   <<Bool1:z\d+>>   ParameterValue
   /// CHECK-DAG:   <<Bool2:z\d+>>   ParameterValue
   /// CHECK-DAG:   <<Const10:i\d+>> IntConstant 10
@@ -313,14 +312,14 @@ public class Main {
 
   // Same as testDoubleDiamondSameValueButNotAllInner, but branches return.
 
-  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValueButNotAllInnerWithReturn(boolean, boolean) select_generator (before)
+  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValueButNotAllInnerWithReturn(boolean, boolean) control_flow_simplifier (before)
   /// CHECK-DAG:   <<Const10:i\d+>> IntConstant 10
   /// CHECK-DAG:   <<Const20:i\d+>> IntConstant 20
   /// CHECK-DAG:                    Return [<<Const10>>]
   /// CHECK-DAG:                    Return [<<Const20>>]
   /// CHECK-DAG:                    Return [<<Const20>>]
 
-  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValueButNotAllInnerWithReturn(boolean, boolean) select_generator (after)
+  /// CHECK-START: int Main.$noinline$testDoubleDiamondSameValueButNotAllInnerWithReturn(boolean, boolean) control_flow_simplifier (after)
   /// CHECK-DAG:   <<Bool1:z\d+>>   ParameterValue
   /// CHECK-DAG:   <<Bool2:z\d+>>   ParameterValue
   /// CHECK-DAG:   <<Const10:i\d+>> IntConstant 10
@@ -342,7 +341,7 @@ public class Main {
 
   // Same as testDoubleDiamondDifferentValue, but branches return.
 
-  /// CHECK-START: int Main.$noinline$testDoubleDiamondDifferentValueWithReturn(boolean, boolean) select_generator (before)
+  /// CHECK-START: int Main.$noinline$testDoubleDiamondDifferentValueWithReturn(boolean, boolean) control_flow_simplifier (before)
   /// CHECK-DAG:   <<Const10:i\d+>> IntConstant 10
   /// CHECK-DAG:   <<Const20:i\d+>> IntConstant 20
   /// CHECK-DAG:   <<Const30:i\d+>> IntConstant 30
@@ -350,7 +349,7 @@ public class Main {
   /// CHECK-DAG:                    Return [<<Const20>>]
   /// CHECK-DAG:                    Return [<<Const30>>]
 
-  /// CHECK-START: int Main.$noinline$testDoubleDiamondDifferentValueWithReturn(boolean, boolean) select_generator (after)
+  /// CHECK-START: int Main.$noinline$testDoubleDiamondDifferentValueWithReturn(boolean, boolean) control_flow_simplifier (after)
   /// CHECK-DAG:   <<Bool1:z\d+>>   ParameterValue
   /// CHECK-DAG:   <<Bool2:z\d+>>   ParameterValue
   /// CHECK-DAG:   <<Const10:i\d+>> IntConstant 10

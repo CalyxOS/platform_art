@@ -53,9 +53,7 @@ static constexpr size_t kMaxPageSize = kMinPageSize;
 // to be able to generate OAT (ELF) and other image files with alignment other than the host page
 // size. kElfSegmentAlignment needs to be equal to the largest page size supported. Effectively,
 // this is the value to be used in images files for aligning contents to page size.
-// However, it's temporarily set to 4096 now, to prevent dex2oat from creating sparse files.
-// TODO(b/378794327): Fix this.
-static constexpr size_t kElfSegmentAlignment = kMinPageSize;
+static constexpr size_t kElfSegmentAlignment = kMaxPageSize;
 
 // Clion, clang analyzer, etc can falsely believe that "if (kIsDebugBuild)" always
 // returns the same value. By wrapping into a call to another constexpr function, we force it

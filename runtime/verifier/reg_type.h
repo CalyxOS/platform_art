@@ -170,21 +170,36 @@ class RegType {
   constexpr bool IsZeroOrNull() const {
     return IsZero() || IsNull();
   }
-  bool IsCategory1Types() const {
-    return IsIntegralTypes() || IsFloat();
+  static constexpr bool IsCategory1Types(Kind kind) {
+    return IsIntegralTypes(kind) || kind == kFloat;
   }
-  bool IsCategory2Types() const {
+  constexpr bool IsCategory1Types() const {
+    return IsCategory1Types(GetKind());
+  }
+  constexpr bool IsCategory2Types() const {
     return IsLowHalf();  // Don't expect explicit testing of high halves
   }
   static constexpr bool IsBooleanTypes(Kind kind) {
     return kind == Kind::kBoolean || kind == Kind::kZero || kind == Kind::kBooleanConstant;
   }
   constexpr bool IsBooleanTypes() const { return IsBooleanTypes(GetKind()); }
+  static constexpr bool IsByteTypes(Kind kind) {
+    return kind == kByte ||
+           kind == kPositiveByteConstant ||
+           kind == kByteConstant ||
+           IsBooleanTypes(kind);
+  }
   constexpr bool IsByteTypes() const {
-    return IsByte() || IsPositiveByteConstant() || IsByteConstant() || IsBooleanTypes();
+    return IsByteTypes(GetKind());
+  }
+  static constexpr bool IsShortTypes(Kind kind) {
+    return kind == kShort ||
+           kind == kPositiveShortConstant ||
+           kind == kShortConstant ||
+           IsByteTypes(kind);
   }
   constexpr bool IsShortTypes() const {
-    return IsShort() || IsPositiveShortConstant() || IsShortConstant() || IsByteTypes();
+    return IsShortTypes(GetKind());
   }
   constexpr bool IsCharTypes() const {
     return IsChar() ||
@@ -193,8 +208,15 @@ class RegType {
            IsPositiveByteConstant() ||
            IsBooleanTypes();
   }
+  static constexpr bool IsIntegralTypes(Kind kind) {
+    return kind == kInteger ||
+           kind == kIntegerConstant ||
+           kind == kChar ||
+           kind == kCharConstant ||
+           IsShortTypes(kind);
+  }
   constexpr bool IsIntegralTypes() const {
-    return IsInteger() || IsIntegerConstant() || IsChar() || IsCharConstant() || IsShortTypes();
+    return IsIntegralTypes(GetKind());
   }
   // Give the constant value encoded, but this shouldn't be called in the
   // general case.

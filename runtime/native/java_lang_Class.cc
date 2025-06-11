@@ -107,7 +107,7 @@ static jclass Class_classForName(JNIEnv* env, jclass, jstring javaName, jboolean
     return nullptr;
   }
 
-  std::string descriptor(DotToDescriptor(name.c_str()));
+  std::string descriptor = DotToDescriptor(name);
   Handle<mirror::ClassLoader> class_loader(
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(javaLoader)));
   ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
@@ -290,11 +290,7 @@ ALWAYS_INLINE static inline ObjPtr<mirror::Field> GetDeclaredField(Thread* self,
     ThrowRuntimeException("Obsolete Object!");
     return nullptr;
   }
-  ArtField* art_field = FindFieldByName(name, c->GetIFieldsPtr());
-  if (art_field != nullptr) {
-    return mirror::Field::CreateFromArtField(self, art_field, true);
-  }
-  art_field = FindFieldByName(name, c->GetSFieldsPtr());
+  ArtField* art_field = FindFieldByName(name, c->GetFieldsPtr());
   if (art_field != nullptr) {
     return mirror::Field::CreateFromArtField(self, art_field, true);
   }

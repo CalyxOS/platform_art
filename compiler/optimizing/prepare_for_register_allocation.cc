@@ -42,7 +42,8 @@ class PrepareForRegisterAllocationVisitor final : public HGraphDelegateVisitor {
   void VisitBoundType(HBoundType* bound_type) override;
   void VisitArraySet(HArraySet* instruction) override;
   void VisitClinitCheck(HClinitCheck* check) override;
-  void VisitCondition(HCondition* condition) override;
+  void VisitIf(HIf* if_instr) override;
+  void VisitSelect(HSelect* select) override;
   void VisitConstructorFence(HConstructorFence* constructor_fence) override;
   void VisitInvokeStaticOrDirect(HInvokeStaticOrDirect* invoke) override;
   void VisitDeoptimize(HDeoptimize* deoptimize) override;
@@ -50,6 +51,7 @@ class PrepareForRegisterAllocationVisitor final : public HGraphDelegateVisitor {
 
   bool CanMoveClinitCheck(HInstruction* input, HInstruction* user) const;
   bool CanEmitConditionAt(HCondition* condition, HInstruction* user) const;
+  void TryToMoveConditionToUser(HInstruction* maybe_condition, HInstruction* user);
 
   const CompilerOptions& compiler_options_;
 };
@@ -108,6 +110,7 @@ void PrepareForRegisterAllocationVisitor::VisitDeoptimize(HDeoptimize* deoptimiz
     deoptimize->ReplaceWith(deoptimize->GuardedInput());
     deoptimize->RemoveGuard();
   }
+  TryToMoveConditionToUser(deoptimize->InputAt(0), deoptimize);
 }
 
 void PrepareForRegisterAllocationVisitor::VisitBoundsCheck(HBoundsCheck* check) {
@@ -206,35 +209,112 @@ void PrepareForRegisterAllocationVisitor::VisitClinitCheck(HClinitCheck* check) 
   }
 }
 
-bool PrepareForRegisterAllocationVisitor::CanEmitConditionAt(HCondition* condition,
-                                                             HInstruction* user) const {
-  if (condition->GetNext() != user) {
+// Determine if moving `condition` to `user` would observably extend the lifetime of a reference.
+// By "observably" we understand that the reference would need to be visible to the GC for longer.
+// We're not concerned with the lifetime for the purposes of register allocation here.
+static bool ConditionMoveWouldExtendReferenceLifetime(HCondition* condition, HInstruction* user) {
+  HInstruction* lhs = condition->InputAt(0);
+  if (lhs->GetType() != DataType::Type::kReference) {
     return false;
   }
+  HInstruction* rhs = condition->InputAt(1);
+  DCHECK_EQ(rhs->GetType(), DataType::Type::kReference);
+  if (lhs->IsNullConstant() && rhs->IsNullConstant()) {
+    return false;
+  }
+  // Check if the last instruction with environment before `user` has all non-null
+  // inputs in the environment. If so, we would not be extending the lifetime.
+  HInstruction* instruction_with_env = user->GetPrevious();
+  while (instruction_with_env != nullptr &&
+         instruction_with_env != condition &&
+         instruction_with_env->GetEnvironment() == nullptr) {
+    DCHECK(!instruction_with_env->GetSideEffects().Includes(SideEffects::CanTriggerGC()));
+    instruction_with_env = instruction_with_env->GetPrevious();
+  }
+  if (instruction_with_env == nullptr) {
+    // No env use in the user's block. Do not search other blocks. Conservatively assume that
+    // moving the `condition` to the `user` would indeed extend the lifetime of a reference.
+    return true;
+  }
+  if (instruction_with_env == condition) {
+    // There is no instruction with an environment between `condition` and `user`, so moving
+    // the condition before the user shall not observably extend the lifetime of the reference.
+    return false;
+  }
+  DCHECK(instruction_with_env->HasEnvironment());
+  auto env_inputs = instruction_with_env->GetEnvironment()->GetEnvInputs();
+  auto extends_lifetime = [&](HInstruction* instruction) {
+    return !instruction->IsNullConstant() &&
+           std::find(env_inputs.begin(), env_inputs.end(), instruction) == env_inputs.end();
+  };
+  return extends_lifetime(lhs) || extends_lifetime(rhs);
+}
+
+bool PrepareForRegisterAllocationVisitor::CanEmitConditionAt(HCondition* condition,
+                                                             HInstruction* user) const {
+  DCHECK(user->IsIf() || user->IsDeoptimize() || user->IsSelect());
 
   if (GetGraph()->IsCompilingBaseline() && compiler_options_.ProfileBranches()) {
     // To do branch profiling, we cannot emit conditions at use site.
     return false;
   }
 
-  if (user->IsIf() || user->IsDeoptimize()) {
-    return true;
+  // Move only a single-user `HCondition` to the `user`.
+  if (!condition->HasOnlyOneNonEnvironmentUse()) {
+    return false;
   }
+  DCHECK(condition->GetUses().front().GetUser() == user);
 
-  if (user->IsSelect() && user->AsSelect()->GetCondition() == condition) {
-    return true;
-  }
-
-  return false;
-}
-
-void PrepareForRegisterAllocationVisitor::VisitCondition(HCondition* condition) {
-  if (condition->HasOnlyOneNonEnvironmentUse()) {
-    HInstruction* user = condition->GetUses().front().GetUser();
-    if (CanEmitConditionAt(condition, user)) {
-      condition->MarkEmittedAtUseSite();
+  if (condition->GetNext() != user) {
+    // Avoid moving across blocks if the graph has any irreducible loops.
+    if (condition->GetBlock() != user->GetBlock() && GetGraph()->HasIrreducibleLoops()) {
+      return false;
+    }
+    // Avoid extending the lifetime of references by moving the condition.
+    if (ConditionMoveWouldExtendReferenceLifetime(condition, user)) {
+      return false;
     }
   }
+
+  return true;
+}
+
+void PrepareForRegisterAllocationVisitor::TryToMoveConditionToUser(HInstruction* maybe_condition,
+                                                                   HInstruction* user) {
+  DCHECK(user->IsIf() || user->IsDeoptimize() || user->IsSelect());
+  if (maybe_condition->IsCondition() && CanEmitConditionAt(maybe_condition->AsCondition(), user)) {
+    if (maybe_condition->GetNext() != user) {
+      maybe_condition->MoveBefore(user);
+#ifdef ART_ENABLE_CODEGEN_x86
+      for (HInstruction* input : maybe_condition->GetInputs()) {
+        if (input->IsEmittedAtUseSite()) {
+          DCHECK(input->IsX86LoadFromConstantTable());
+          input->MoveBefore(maybe_condition);
+          HInstruction* inputs_input = input->InputAt(0);
+          DCHECK(inputs_input->IsX86ComputeBaseMethodAddress());
+          if (inputs_input->HasOnlyOneNonEnvironmentUse()) {
+            inputs_input->MoveBefore(input);
+          }
+        }
+      }
+#else  // ART_ENABLE_CODEGEN_x86
+      if (kIsDebugBuild) {
+        for (HInstruction* input : maybe_condition->GetInputs()) {
+          CHECK(!input->IsEmittedAtUseSite()) << input->DebugName() << "#" << input->GetId();
+        }
+      }
+#endif
+    }
+    maybe_condition->MarkEmittedAtUseSite();
+  }
+}
+
+void PrepareForRegisterAllocationVisitor::VisitIf(HIf* if_instr) {
+  TryToMoveConditionToUser(if_instr->InputAt(0), if_instr);
+}
+
+void PrepareForRegisterAllocationVisitor::VisitSelect(HSelect* select) {
+  TryToMoveConditionToUser(select->GetCondition(), select);
 }
 
 void PrepareForRegisterAllocationVisitor::VisitConstructorFence(

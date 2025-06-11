@@ -301,52 +301,6 @@ TEST_F(SuperblockClonerTest, LoopUnrolling) {
   EXPECT_EQ(loop_info->GetBackEdges()[0], bb_map.Get(loop_body));
 }
 
-// Tests SuperblockCloner for loop versioning case.
-//
-// See an ASCII graphics example near LoopClonerHelper::DoVersioning.
-TEST_F(SuperblockClonerTest, LoopVersioning) {
-  HBasicBlock* return_block = InitGraphAndParameters();
-  auto [preheader, header, loop_body] = CreateWhileLoop(return_block);
-  CreateBasicLoopDataFlow(header, loop_body);
-  graph_->BuildDominatorTree();
-  EXPECT_TRUE(CheckGraph());
-
-  HBasicBlockMap bb_map(
-      std::less<HBasicBlock*>(), graph_->GetAllocator()->Adapter(kArenaAllocSuperblockCloner));
-  HInstructionMap hir_map(
-      std::less<HInstruction*>(), graph_->GetAllocator()->Adapter(kArenaAllocSuperblockCloner));
-
-  HLoopInformation* loop_info = header->GetLoopInformation();
-  HBasicBlock* original_preheader = loop_info->GetPreHeader();
-  LoopClonerHelper helper(loop_info, &bb_map, &hir_map, /* induction_range= */ nullptr);
-  EXPECT_TRUE(helper.IsLoopClonable());
-  HBasicBlock* new_header = helper.DoVersioning();
-  EXPECT_EQ(header, new_header);
-
-  EXPECT_TRUE(CheckGraph());
-
-  HBasicBlock* second_header = bb_map.Get(header);
-  HBasicBlock* second_body = bb_map.Get(loop_body);
-  HLoopInformation* second_loop_info = second_header->GetLoopInformation();
-
-  // Check loop body successors.
-  EXPECT_EQ(loop_body->GetSingleSuccessor(), header);
-  EXPECT_EQ(second_body->GetSingleSuccessor(), second_header);
-
-  // Check loop structure.
-  EXPECT_EQ(loop_info, header->GetLoopInformation());
-  EXPECT_EQ(loop_info->GetHeader(), header);
-  EXPECT_EQ(second_loop_info->GetHeader(), second_header);
-
-  EXPECT_EQ(loop_info->GetBackEdges().size(), 1u);
-  EXPECT_EQ(second_loop_info->GetBackEdges().size(), 1u);
-
-  EXPECT_EQ(loop_info->GetBackEdges()[0], loop_body);
-  EXPECT_EQ(second_loop_info->GetBackEdges()[0], second_body);
-
-  EXPECT_EQ(original_preheader->GetSuccessors().size(), 2u);
-}
-
 // Checks that loop unrolling works fine for a loop with multiple back edges. Tests that after
 // the transformation the loop has a single preheader.
 TEST_F(SuperblockClonerTest, LoopPeelingMultipleBackEdges) {

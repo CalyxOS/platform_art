@@ -18,7 +18,7 @@
 
 .field public static value:Z
 
-## CHECK-START: boolean TestCase.testCase() select_generator (before)
+## CHECK-START: boolean TestCase.testCase() control_flow_simplifier (before)
 ## CHECK-DAG:     <<Const0:i\d+>>   IntConstant 0
 ## CHECK-DAG:     <<Const1:i\d+>>   IntConstant 1
 ## CHECK-DAG:     <<Value:z\d+>>    StaticFieldGet
@@ -26,7 +26,7 @@
 ## CHECK-DAG:     <<Phi:i\d+>>      Phi [<<Const1>>,<<Const0>>]
 ## CHECK-DAG:                       Return [<<Phi>>]
 
-## CHECK-START: boolean TestCase.testCase() select_generator (after)
+## CHECK-START: boolean TestCase.testCase() control_flow_simplifier (after)
 ## CHECK-DAG:     <<Const0:i\d+>>   IntConstant 0
 ## CHECK-DAG:     <<Const1:i\d+>>   IntConstant 1
 ## CHECK-DAG:     <<Value:z\d+>>    StaticFieldGet

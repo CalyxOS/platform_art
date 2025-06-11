@@ -151,5 +151,6 @@ palette_status_t PaletteSetTaskProfiles([[maybe_unused]] int32_t tid,
 // Methods in version 4 API, corresponding to SDK level 36.
 palette_status_t PaletteDebugStoreGetString([[maybe_unused]] char* result,
                                             [[maybe_unused]] size_t max_size) {
+  result[0] = '\0';
   return PALETTE_STATUS_OK;
 }

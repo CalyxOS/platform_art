@@ -207,7 +207,7 @@ static inline DataType::Type GetVarHandleExpectedValueType(HInvoke* invoke,
   }
 }
 
-static inline ArtField* GetBootImageVarHandleField(HInvoke* invoke)
+static inline ArtField* GetImageVarHandleField(HInvoke* invoke)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   DCHECK_LE(GetExpectedVarHandleCoordinatesCount(invoke), 1u);
   DCHECK(VarHandleOptimizations(invoke).GetUseKnownImageVarHandle());

@@ -150,7 +150,7 @@ class BuildTestContext:
                        stderr=subprocess.STDOUT,
                        stdout=subprocess.PIPE)
     if REPORT_SLOW_COMMANDS:
-      m = re.search("([0-9\.]+)user", p.stdout)
+      m = re.search(r"([0-9\.]+)user", p.stdout)
       assert m, p.stdout
       t = float(m.group(1))
       if t > 1.0:
@@ -253,7 +253,8 @@ class BuildTestContext:
       use_smali=True,
       use_jasmin=True,
       javac_source_arg="1.8",
-      javac_target_arg="1.8"
+      javac_target_arg="1.8",
+      delete_srcs=True,
     ):
     javac_classpath = javac_classpath.copy()  # Do not modify default value.
 
@@ -505,6 +506,15 @@ class BuildTestContext:
       else:
         make_hiddenapi(Path("classes.dex"))
 
+    # Clean up intermediate files.
+    if self.target or self.host:
+      for f in self.test_dir.glob("**/*.class"):
+        f.unlink()
+    if delete_srcs and "-checker-" not in self.test_name:
+      for ext in ["java", "smali", "j"]:
+        for f in self.test_dir.glob(f"**/*.{ext}"):
+          f.unlink()
+
     # Create a single dex jar with two dex files for multidex.
     if need_dex:
       if Path("classes2.dex").exists():
@@ -571,19 +581,24 @@ def create_ci_runner_scripts(out, mode, test_names):
   ]
   run([python, script] + args + test_names, env=envs, check=True)
   tests = {
-    "setup": {
-      "adb push": [[str(setup.relative_to(out)), "/data/local/tmp/art/setup.sh"]],
-      "adb shell": [["sh", "/data/local/tmp/art/setup.sh"]],
+    "setup#compile-boot-image": {
+      "adb push": [
+        [str(setup.relative_to(out)), "/data/local/tmp/art/setup.sh"]
+      ],
+      "adb shell": [
+        ["rm", "-rf", "/data/local/tmp/art/test"],
+        ["sh", "/data/local/tmp/art/setup.sh"],
+      ],
     },
   }
   for runner in Path(out).glob("*/*.sh"):
     test_name = runner.parent.name
     test_hash = runner.stem
     target_dir = f"/data/local/tmp/art/test/{test_hash}"
-    tests[f"{test_name}-{test_hash}"] = {
-      "dependencies": ["setup"],
+    tests[f"{test_name}#{test_hash}"] = {
+      "dependencies": ["setup#compile-boot-image"],
       "adb push": [
-        [f"../{mode}/{test_name}/", f"{target_dir}/"],
+        [f"../{mode}/{test_name}", f"{target_dir}"],
         [str(runner.relative_to(out)), f"{target_dir}/run.sh"]
       ],
       "adb shell": [["sh", f"{target_dir}/run.sh"]],

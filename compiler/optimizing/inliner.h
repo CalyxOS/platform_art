@@ -246,9 +246,7 @@ class HInliner : public HOptimization {
                    HInstruction* cursor,
                    HBasicBlock* bb_cursor);
 
-  HInstanceFieldGet* BuildGetReceiverClass(ClassLinker* class_linker,
-                                           HInstruction* receiver,
-                                           uint32_t dex_pc) const
+  HInstanceFieldGet* BuildGetReceiverClass(HInstruction* receiver, uint32_t dex_pc) const
     REQUIRES_SHARED(Locks::mutator_lock_);
 
   void MaybeRunReferenceTypePropagation(HInstruction* replacement,

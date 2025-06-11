@@ -17,9 +17,10 @@
 #include "oat.h"
 
 #include <string.h>
+#include <zlib.h>
 
+#include "android-base/logging.h"
 #include "android-base/stringprintf.h"
-
 #include "arch/instruction_set.h"
 #include "arch/instruction_set_features.h"
 #include "base/bit_utils.h"
@@ -37,6 +38,13 @@ static size_t ComputeOatHeaderSize(const SafeMap<std::string, std::string>* vari
     for ( ; it != end; ++it) {
       estimate += it->first.length() + 1;
       estimate += it->second.length() + 1;
+
+      size_t non_deterministic_field_length = OatHeader::GetNonDeterministicFieldLength(it->first);
+      if (non_deterministic_field_length > 0u) {
+        DCHECK_LE(it->second.length(), non_deterministic_field_length);
+        size_t padding = non_deterministic_field_length - it->second.length();
+        estimate += padding;
+      }
     }
   }
   return sizeof(OatHeader) + estimate;
@@ -45,7 +53,8 @@ static size_t ComputeOatHeaderSize(const SafeMap<std::string, std::string>* vari
 OatHeader* OatHeader::Create(InstructionSet instruction_set,
                              const InstructionSetFeatures* instruction_set_features,
                              uint32_t dex_file_count,
-                             const SafeMap<std::string, std::string>* variable_data) {
+                             const SafeMap<std::string, std::string>* variable_data,
+                             uint32_t base_oat_offset) {
   // Estimate size of optional data.
   size_t needed_size = ComputeOatHeaderSize(variable_data);
 
@@ -56,19 +65,30 @@ OatHeader* OatHeader::Create(InstructionSet instruction_set,
   return new (memory) OatHeader(instruction_set,
                                 instruction_set_features,
                                 dex_file_count,
-                                variable_data);
+                                variable_data,
+                                base_oat_offset);
+}
+
+void OatHeader::Delete(OatHeader* header) {
+  if (header != nullptr) {
+    size_t size = header->GetHeaderSize();
+    header->~OatHeader();
+    operator delete(header, size);
+  }
 }
 
 OatHeader::OatHeader(InstructionSet instruction_set,
                      const InstructionSetFeatures* instruction_set_features,
                      uint32_t dex_file_count,
-                     const SafeMap<std::string, std::string>* variable_data)
+                     const SafeMap<std::string, std::string>* variable_data,
+                     uint32_t base_oat_offset)
     : oat_checksum_(0u),
       instruction_set_(instruction_set),
       instruction_set_features_bitmap_(instruction_set_features->AsBitmap()),
       dex_file_count_(dex_file_count),
       oat_dex_files_offset_(0),
       bcp_bss_info_offset_(0),
+      base_oat_offset_(base_oat_offset),
       executable_offset_(0),
       jni_dlsym_lookup_trampoline_offset_(0),
       jni_dlsym_lookup_critical_trampoline_offset_(0),
@@ -100,7 +120,9 @@ bool OatHeader::IsValid() const {
   if (version_ != kOatVersion) {
     return false;
   }
-  if (!IsAligned<kElfSegmentAlignment>(executable_offset_)) {
+  // Only check the offset is valid after it has been set.
+  if (executable_offset_ != 0u &&
+      !IsAligned<kElfSegmentAlignment>(executable_offset_ + base_oat_offset_)) {
     return false;
   }
   if (!IsValidInstructionSet(instruction_set_)) {
@@ -122,7 +144,9 @@ std::string OatHeader::GetValidationErrorMessage() const {
                         kOatVersion[0], kOatVersion[1], kOatVersion[2], kOatVersion[3],
                         version_[0], version_[1], version_[2], version_[3]);
   }
-  if (!IsAligned<kElfSegmentAlignment>(executable_offset_)) {
+  // Only check the offset is valid after it has been set.
+  if (executable_offset_ != 0u &&
+      !IsAligned<kElfSegmentAlignment>(executable_offset_ + base_oat_offset_)) {
     return "Executable offset not properly aligned.";
   }
   if (!IsValidInstructionSet(instruction_set_)) {
@@ -199,13 +223,13 @@ void OatHeader::SetBcpBssInfoOffset(uint32_t bcp_info_offset) {
 
 uint32_t OatHeader::GetExecutableOffset() const {
   DCHECK(IsValid());
-  DCHECK_ALIGNED(executable_offset_, kElfSegmentAlignment);
+  DCHECK_ALIGNED(executable_offset_ + base_oat_offset_, kElfSegmentAlignment);
   CHECK_GT(executable_offset_, sizeof(OatHeader));
   return executable_offset_;
 }
 
 void OatHeader::SetExecutableOffset(uint32_t executable_offset) {
-  DCHECK_ALIGNED(executable_offset, kElfSegmentAlignment);
+  DCHECK_ALIGNED(executable_offset + base_oat_offset_, kElfSegmentAlignment);
   CHECK_GT(executable_offset, sizeof(OatHeader));
   DCHECK(IsValid());
   DCHECK_EQ(executable_offset_, 0U);
@@ -349,69 +373,81 @@ const uint8_t* OatHeader::GetKeyValueStore() const {
   return key_value_store_;
 }
 
-const char* OatHeader::GetStoreValueByKey(const char* key) const {
+const char* OatHeader::GetStoreValueByKeyUnsafe(const char* key) const {
   std::string_view key_view(key);
-  const char* ptr = reinterpret_cast<const char*>(&key_value_store_);
-  const char* end = ptr + key_value_store_size_;
 
-  while (ptr < end) {
-    // Scan for a closing zero.
-    const char* str_end = reinterpret_cast<const char*>(memchr(ptr, 0, end - ptr));
-    if (UNLIKELY(str_end == nullptr)) {
-      LOG(WARNING) << "OatHeader: Unterminated key in key value store.";
-      return nullptr;
-    }
-    const char* value_start = str_end + 1;
-    const char* value_end =
-        reinterpret_cast<const char*>(memchr(value_start, 0, end - value_start));
-    if (UNLIKELY(value_end == nullptr)) {
-      LOG(WARNING) << "OatHeader: Unterminated value in key value store.";
-      return nullptr;
-    }
-    if (key_view == std::string_view(ptr, str_end - ptr)) {
+  uint32_t offset = 0;
+  const char* current_key;
+  const char* value;
+  while (GetNextStoreKeyValuePair(&offset, &current_key, &value)) {
+    if (key_view == current_key) {
       // Same as key.
-      return value_start;
+      return value;
     }
-    // Different from key. Advance over the value.
-    ptr = value_end + 1;
   }
+
   // Not found.
   return nullptr;
 }
 
-bool OatHeader::GetStoreKeyValuePairByIndex(size_t index,
-                                            const char** key,
-                                            const char** value) const {
-  const char* ptr = reinterpret_cast<const char*>(&key_value_store_);
-  const char* end = ptr + key_value_store_size_;
-  size_t counter = index;
-
-  while (ptr < end) {
-    // Scan for a closing zero.
-    const char* str_end = reinterpret_cast<const char*>(memchr(ptr, 0, end - ptr));
-    if (UNLIKELY(str_end == nullptr)) {
-      LOG(WARNING) << "OatHeader: Unterminated key in key value store.";
-      return false;
-    }
-    const char* value_start = str_end + 1;
-    const char* value_end =
-        reinterpret_cast<const char*>(memchr(value_start, 0, end - value_start));
-    if (UNLIKELY(value_end == nullptr)) {
-      LOG(WARNING) << "OatHeader: Unterminated value in key value store.";
-      return false;
-    }
-    if (counter == 0) {
-      *key = ptr;
-      *value = value_start;
-      return true;
-    } else {
-      --counter;
-    }
-    // Advance over the value.
-    ptr = value_end + 1;
+bool OatHeader::GetNextStoreKeyValuePair(/*inout*/ uint32_t* offset,
+                                         /*out*/ const char** key,
+                                         /*out*/ const char** value) const {
+  if (*offset >= key_value_store_size_) {
+    return false;
   }
-  // Not found.
-  return false;
+
+  const char* start = reinterpret_cast<const char*>(&key_value_store_);
+  const char* ptr = start + *offset;
+  const char* end = start + key_value_store_size_;
+
+  // Scan for a closing zero.
+  const char* str_end = reinterpret_cast<const char*>(memchr(ptr, 0, end - ptr));
+  if (UNLIKELY(str_end == nullptr)) {
+    LOG(WARNING) << "OatHeader: Unterminated key in key value store.";
+    return false;
+  }
+  const char* value_start = str_end + 1;
+  const char* value_end = reinterpret_cast<const char*>(memchr(value_start, 0, end - value_start));
+  if (UNLIKELY(value_end == nullptr)) {
+    LOG(WARNING) << "OatHeader: Unterminated value in key value store.";
+    return false;
+  }
+
+  *key = ptr;
+  *value = value_start;
+
+  // Advance over the value.
+  size_t key_len = str_end - ptr;
+  size_t value_len = value_end - value_start;
+  size_t non_deterministic_field_length = GetNonDeterministicFieldLength(*key);
+  if (non_deterministic_field_length > 0u) {
+    if (UNLIKELY(value_len > non_deterministic_field_length)) {
+      LOG(WARNING) << "OatHeader: Non-deterministic field too long in key value store.";
+      return false;
+    }
+    *offset += key_len + 1 + non_deterministic_field_length + 1;
+  } else {
+    *offset += key_len + 1 + value_len + 1;
+  }
+
+  return true;
+}
+
+void OatHeader::ComputeChecksum(/*inout*/ uint32_t* checksum) const {
+  *checksum = adler32(*checksum, reinterpret_cast<const uint8_t*>(this), sizeof(OatHeader));
+
+  uint32_t last_offset = 0;
+  uint32_t offset = 0;
+  const char* key;
+  const char* value;
+  while (GetNextStoreKeyValuePair(&offset, &key, &value)) {
+    if (IsDeterministicField(key)) {
+      // Update the checksum.
+      *checksum = adler32(*checksum, GetKeyValueStore() + last_offset, offset - last_offset);
+    }
+    last_offset = offset;
+  }
 }
 
 size_t OatHeader::GetHeaderSize() const {
@@ -462,6 +498,14 @@ void OatHeader::Flatten(const SafeMap<std::string, std::string>* key_value_store
       data_ptr += it->first.length() + 1;
       strlcpy(data_ptr, it->second.c_str(), it->second.length() + 1);
       data_ptr += it->second.length() + 1;
+
+      size_t non_deterministic_field_length = GetNonDeterministicFieldLength(it->first);
+      if (non_deterministic_field_length > 0u) {
+        DCHECK_LE(it->second.length(), non_deterministic_field_length);
+        size_t padding = non_deterministic_field_length - it->second.length();
+        memset(data_ptr, 0, padding);
+        data_ptr += padding;
+      }
     }
   }
   key_value_store_size_ = data_ptr - reinterpret_cast<char*>(&key_value_store_);

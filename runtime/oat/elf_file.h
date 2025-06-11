@@ -17,16 +17,17 @@
 #ifndef ART_RUNTIME_OAT_ELF_FILE_H_
 #define ART_RUNTIME_OAT_ELF_FILE_H_
 
-#include <memory>
+#include <cstddef>
 #include <string>
+#include <vector>
 
+#include "android-base/logging.h"
 #include "base/macros.h"
+#include "base/mem_map.h"
 #include "base/os.h"
 #include "elf/elf_utils.h"
 
 namespace art HIDDEN {
-
-class MemMap;
 
 template <typename ElfTypes>
 class ElfFileImpl;
@@ -40,75 +41,72 @@ using ElfFileImpl64 = ElfFileImpl<ElfTypes64>;
 // ELFObjectFile.
 class ElfFile {
  public:
+  // Loads the program headers.
+  // Does not take the ownership of the file. It must stay alive during the `Load` call.
   static ElfFile* Open(File* file,
-                       bool writable,
-                       bool program_header_only,
+                       off_t start,
+                       size_t file_length,
+                       const std::string& file_location,
                        bool low_4gb,
-                       /*out*/std::string* error_msg);
-  // Open with specific mmap flags, Always maps in the whole file, not just the
-  // program header sections.
+                       /*out*/ std::string* error_msg);
+
   static ElfFile* Open(File* file,
-                       int mmap_prot,
-                       int mmap_flags,
-                       /*out*/std::string* error_msg);
-  ~ElfFile();
+                       bool low_4gb,
+                       /*out*/ std::string* error_msg);
 
-  // Load segments into memory based on PT_LOAD program headers
-  bool Load(File* file,
-            bool executable,
-            bool low_4gb,
-            /*inout*/MemMap* reservation,
-            /*out*/std::string* error_msg);
+  virtual ~ElfFile() = default;
 
-  const uint8_t* FindDynamicSymbolAddress(const std::string& symbol_name) const;
+  // Load segments into memory based on PT_LOAD program headers.
+  virtual bool Load(bool executable,
+                    bool low_4gb,
+                    /*inout*/ MemMap* reservation,
+                    /*out*/ std::string* error_msg) = 0;
 
-  size_t Size() const;
+  virtual const uint8_t* FindDynamicSymbolAddress(const std::string& symbol_name) const = 0;
 
-  // The start of the memory map address range for this ELF file.
-  uint8_t* Begin() const;
+  // Returns the location of the ELF file, for debugging purposes only.
+  // Note that the location is not necessarily a path to a file on disk. It can also be a zip entry
+  // inside a zip file.
+  const std::string& GetFileLocation() const { return file_location_; }
 
-  // The end of the memory map address range for this ELF file.
-  uint8_t* End() const;
+  uint8_t* GetBaseAddress() const { return base_address_; }
 
-  const std::string& GetFilePath() const;
+  uint8_t* Begin() const { return map_.Begin(); }
 
-  bool GetSectionOffsetAndSize(const char* section_name, uint64_t* offset, uint64_t* size) const;
+  uint8_t* End() const { return map_.End(); }
 
-  bool HasSection(const std::string& name) const;
+  size_t Size() const { return map_.Size(); }
 
-  uint64_t FindSymbolAddress(unsigned section_type,
-                             const std::string& symbol_name,
-                             bool build_map);
+  virtual bool GetLoadedSize(size_t* size, std::string* error_msg) const = 0;
 
-  bool GetLoadedSize(size_t* size, std::string* error_msg) const;
+  virtual size_t GetElfSegmentAlignmentFromFile() const = 0;
 
-  size_t GetElfSegmentAlignmentFromFile() const;
+  virtual bool Is64Bit() const = 0;
 
-  const uint8_t* GetBaseAddress() const;
-
-  // Strip an ELF file of unneeded debugging information.
-  // Returns true on success, false on failure.
-  static bool Strip(File* file, std::string* error_msg);
-
-  bool Is64Bit() const {
-    return elf64_.get() != nullptr;
+ protected:
+  ElfFile(File* file, off_t start, size_t file_length, const std::string& file_location)
+      : file_(file), start_(start), file_length_(file_length), file_location_(file_location) {
+    CHECK(file != nullptr);
   }
 
-  ElfFileImpl32* GetImpl32() const {
-    return elf32_.get();
-  }
+  File* const file_;
+  const off_t start_;
+  const size_t file_length_;
+  const std::string file_location_;
 
-  ElfFileImpl64* GetImpl64() const {
-    return elf64_.get();
-  }
+  // ELF header mapping. If program_header_only_ is false, will
+  // actually point to the entire elf file.
+  MemMap map_;
+  std::vector<MemMap> segments_;
+
+  // Pointer to start of first PT_LOAD program segment after Load()
+  // when program_header_only_ is true.
+  uint8_t* base_address_ = nullptr;
+
+  // The program header should always available but use GetProgramHeadersStart() to be sure.
+  uint8_t* program_headers_start_ = nullptr;
 
  private:
-  explicit ElfFile(ElfFileImpl32* elf32);
-  explicit ElfFile(ElfFileImpl64* elf64);
-
-  const std::unique_ptr<ElfFileImpl32> elf32_;
-  const std::unique_ptr<ElfFileImpl64> elf64_;
-
   DISALLOW_COPY_AND_ASSIGN(ElfFile);
 };
 

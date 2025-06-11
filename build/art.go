@@ -44,6 +44,19 @@ func globalFlags(ctx android.LoadHookContext) ([]string, []string) {
 		tlab = true
 	}
 
+	if ctx.Config().IsEnvTrue("ART_USE_RESTRICTED_MODE") {
+		cflags = append(cflags, "-DART_USE_RESTRICTED_MODE=1")
+		asflags = append(asflags, "-DART_USE_RESTRICTED_MODE=1")
+
+		// TODO(Simulator): Support other GC types.
+		gcType = "MS"
+	}
+
+	if ctx.Config().IsEnvTrue("ART_USE_SIMULATOR") {
+		cflags = append(cflags, "-DART_USE_SIMULATOR=1")
+		asflags = append(asflags, "-DART_USE_SIMULATOR=1")
+	}
+
 	cflags = append(cflags, "-DART_DEFAULT_GC_TYPE_IS_"+gcType)
 
 	if ctx.Config().IsEnvTrue("ART_HEAP_POISONING") {
@@ -54,7 +67,10 @@ func globalFlags(ctx android.LoadHookContext) ([]string, []string) {
 		cflags = append(cflags, "-DART_USE_CXX_INTERPRETER=1")
 	}
 
-	if !ctx.Config().IsEnvFalse("ART_USE_READ_BARRIER") && ctx.Config().ArtUseReadBarrier() {
+	// TODO: deprecate and then eventually remove ART_USE_GENERATIONAL_CC in favor of
+	// ART_USE_GENERATIONAL_GC
+	if !ctx.Config().IsEnvFalse("ART_USE_READ_BARRIER") && ctx.Config().ArtUseReadBarrier() &&
+	   !ctx.Config().IsEnvTrue("ART_USE_RESTRICTED_MODE") {
 		// Used to change the read barrier type. Valid values are BAKER, TABLELOOKUP.
 		// The default is BAKER.
 		barrierType := ctx.Config().GetenvWithDefault("ART_READ_BARRIER_TYPE", "BAKER")
@@ -65,8 +81,9 @@ func globalFlags(ctx android.LoadHookContext) ([]string, []string) {
 			"-DART_USE_READ_BARRIER=1",
 			"-DART_READ_BARRIER_TYPE_IS_"+barrierType+"=1")
 
-		if !ctx.Config().IsEnvFalse("ART_USE_GENERATIONAL_CC") {
-			cflags = append(cflags, "-DART_USE_GENERATIONAL_CC=1")
+		if !(ctx.Config().IsEnvFalse("ART_USE_GENERATIONAL_CC") ||
+		     ctx.Config().IsEnvFalse("ART_USE_GENERATIONAL_GC")) {
+			cflags = append(cflags, "-DART_USE_GENERATIONAL_GC=1")
 		}
 		// Force CC only if ART_USE_READ_BARRIER was set to true explicitly during
 		// build time.
@@ -76,6 +93,10 @@ func globalFlags(ctx android.LoadHookContext) ([]string, []string) {
 		tlab = true
 	} else if gcType == "CMC" {
 		tlab = true
+		if !(ctx.Config().IsEnvFalse("ART_USE_GENERATIONAL_CC") ||
+		     ctx.Config().IsEnvFalse("ART_USE_GENERATIONAL_GC")) {
+			cflags = append(cflags, "-DART_USE_GENERATIONAL_GC=1")
+		}
 	}
 
 	if tlab {

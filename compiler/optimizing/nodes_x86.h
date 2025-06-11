@@ -59,6 +59,8 @@ class HX86LoadFromConstantTable final : public HExpression<2> {
     return InputAt(1)->AsConstant();
   }
 
+  bool CanBeMoved() const override { return true; }
+
   DECLARE_INSTRUCTION(X86LoadFromConstantTable);
 
  protected:

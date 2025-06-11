@@ -80,6 +80,9 @@ void BumpPointerSpace::Clear() {
     memset(Begin(), 0, Limit() - Begin());
   }
   CHECK_NE(madvise(Begin(), Limit() - Begin(), MADV_DONTNEED), -1) << "madvise failed";
+  if (GetMarkBitmap() != nullptr) {
+    GetMarkBitmap()->Clear();
+  }
   // Reset the end of the space back to the beginning, we move the end forward as we allocate
   // objects.
   SetEnd(Begin());
@@ -90,6 +93,7 @@ void BumpPointerSpace::Clear() {
     growth_end_ = Limit();
     block_sizes_.clear();
     main_block_size_ = 0;
+    black_dense_region_size_ = 0;
   }
 }
 

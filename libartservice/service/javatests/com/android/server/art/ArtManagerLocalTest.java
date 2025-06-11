@@ -16,9 +16,11 @@
 
 package com.android.server.art;
 
+import static android.app.ActivityManager.RunningAppProcessInfo;
 import static android.os.ParcelFileDescriptor.AutoCloseInputStream;
 
 import static com.android.server.art.DexUseManagerLocal.CheckedSecondaryDexInfo;
+import static com.android.server.art.ProfilePath.PrimaryCurProfilePath;
 import static com.android.server.art.model.DexoptResult.DexContainerFileDexoptResult;
 import static com.android.server.art.model.DexoptResult.PackageDexoptResult;
 import static com.android.server.art.model.DexoptStatus.DexContainerFileDexoptStatus;
@@ -37,6 +39,7 @@ import static org.mockito.Mockito.anyBoolean;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.argThat;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.isNull;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -46,6 +49,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import android.app.ActivityManager;
 import android.apphibernation.AppHibernationManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -58,6 +62,7 @@ import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.os.storage.StorageManager;
+import android.system.OsConstants;
 
 import androidx.test.filters.SmallTest;
 
@@ -88,6 +93,7 @@ import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameter;
 import org.junit.runners.Parameterized.Parameters;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 
 import java.io.File;
@@ -120,6 +126,7 @@ public class ArtManagerLocalTest {
             CURRENT_TIME_MS - TimeUnit.DAYS.toMillis(INACTIVE_DAYS) + 1;
     private static final long NOT_RECENT_TIME_MS =
             CURRENT_TIME_MS - TimeUnit.DAYS.toMillis(INACTIVE_DAYS) - 1;
+    private static final int APP_ID = 1000;
 
     @Rule
     public StaticMockitoRule mockitoRule = new StaticMockitoRule(
@@ -140,6 +147,7 @@ public class ArtManagerLocalTest {
     @Mock private Context mContext;
     @Mock private PreRebootDexoptJob mPreRebootDexoptJob;
     @Mock private PreRebootStatsReporter.Injector mPreRebootStatsReporterInjector;
+    @Mock private ActivityManager mActivityManager;
     private PackageState mPkgState1;
     private AndroidPackage mPkg1;
     private CheckedSecondaryDexInfo mPkg1SecondaryDexInfo1;
@@ -188,6 +196,7 @@ public class ArtManagerLocalTest {
                 .when(mInjector.getPreRebootStatsReporter())
                 .thenAnswer(
                         invocation -> new PreRebootStatsReporter(mPreRebootStatsReporterInjector));
+        lenient().when(mInjector.getActivityManager()).thenReturn(mActivityManager);
 
         lenient().when(mArtFileManagerInjector.getArtd()).thenReturn(mArtd);
         lenient().when(mArtFileManagerInjector.getUserManager()).thenReturn(mUserManager);
@@ -324,6 +333,15 @@ public class ArtManagerLocalTest {
         verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPathAsInput(
                 "/data/user/0/foo/not_found.apk", "arm64", false /* isInDalvikCache */)));
 
+        verify(mArtd).deleteSdmSdcFiles(deepEq(AidlUtils.buildSecureDexMetadataWithCompanionPaths(
+                "/somewhere/app/foo/base.apk", "arm64", mIsInDalvikCache)));
+        verify(mArtd).deleteSdmSdcFiles(deepEq(AidlUtils.buildSecureDexMetadataWithCompanionPaths(
+                "/somewhere/app/foo/base.apk", "arm", mIsInDalvikCache)));
+        verify(mArtd).deleteSdmSdcFiles(deepEq(AidlUtils.buildSecureDexMetadataWithCompanionPaths(
+                "/somewhere/app/foo/split_0.apk", "arm64", mIsInDalvikCache)));
+        verify(mArtd).deleteSdmSdcFiles(deepEq(AidlUtils.buildSecureDexMetadataWithCompanionPaths(
+                "/somewhere/app/foo/split_0.apk", "arm", mIsInDalvikCache)));
+
         verify(mArtd).deleteRuntimeArtifacts(deepEq(AidlUtils.buildRuntimeArtifactsPath(
                 PKG_NAME_1, "/somewhere/app/foo/base.apk", "arm64")));
         verify(mArtd).deleteRuntimeArtifacts(deepEq(AidlUtils.buildRuntimeArtifactsPath(
@@ -335,6 +353,7 @@ public class ArtManagerLocalTest {
 
         // Verify that there are no more calls than the ones above.
         verify(mArtd, times(6)).deleteArtifacts(any());
+        verify(mArtd, times(4)).deleteSdmSdcFiles(any());
         verify(mArtd, times(4)).deleteRuntimeArtifacts(any());
     }
 
@@ -561,6 +580,15 @@ public class ArtManagerLocalTest {
         verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPathAsInput(
                 "/somewhere/app/foo/split_0.apk", "arm64", mIsInDalvikCache)));
         verify(mArtd).deleteArtifacts(deepEq(AidlUtils.buildArtifactsPathAsInput(
+                "/somewhere/app/foo/split_0.apk", "arm", mIsInDalvikCache)));
+
+        verify(mArtd).deleteSdmSdcFiles(deepEq(AidlUtils.buildSecureDexMetadataWithCompanionPaths(
+                "/somewhere/app/foo/base.apk", "arm64", mIsInDalvikCache)));
+        verify(mArtd).deleteSdmSdcFiles(deepEq(AidlUtils.buildSecureDexMetadataWithCompanionPaths(
+                "/somewhere/app/foo/base.apk", "arm", mIsInDalvikCache)));
+        verify(mArtd).deleteSdmSdcFiles(deepEq(AidlUtils.buildSecureDexMetadataWithCompanionPaths(
+                "/somewhere/app/foo/split_0.apk", "arm64", mIsInDalvikCache)));
+        verify(mArtd).deleteSdmSdcFiles(deepEq(AidlUtils.buildSecureDexMetadataWithCompanionPaths(
                 "/somewhere/app/foo/split_0.apk", "arm", mIsInDalvikCache)));
 
         verify(mArtd).deleteRuntimeArtifacts(deepEq(AidlUtils.buildRuntimeArtifactsPath(
@@ -1259,11 +1287,66 @@ public class ArtManagerLocalTest {
                                 "arm64", true /* isInDalvikCache */)),
                 inAnyOrderDeepEquals(VdexPath.artifactsPath(AidlUtils.buildArtifactsPathAsInput(
                         "/somewhere/app/foo/split_0.apk", "arm", false /* isInDalvikCache */))),
+                inAnyOrderDeepEquals() /* sdmSdcFilesToKeep */,
                 inAnyOrderDeepEquals(AidlUtils.buildRuntimeArtifactsPath(
                                              PKG_NAME_1, "/somewhere/app/foo/split_0.apk", "arm64"),
                         AidlUtils.buildRuntimeArtifactsPath(
                                 PKG_NAME_1, "/somewhere/app/foo/split_0.apk", "arm")),
                 eq(keepPreRebootStagedFiles));
+    }
+
+    @Test
+    public void testCleanupDmAndSdm() throws Exception {
+        when(mPreRebootDexoptJob.hasStarted()).thenReturn(false);
+
+        // It should keep the SDM file, but not runtime images.
+        doReturn(createGetDexoptStatusResult(
+                         "speed-profile", "cloud", "location", ArtifactsLocation.SDM_NEXT_TO_DEX))
+                .when(mArtd)
+                .getDexoptStatus(eq("/somewhere/app/foo/base.apk"), eq("arm64"), any());
+
+        // It should keep the SDM file, but not runtime images.
+        doReturn(createGetDexoptStatusResult(
+                         "speed-profile", "cloud", "location", ArtifactsLocation.SDM_DALVIK_CACHE))
+                .when(mArtd)
+                .getDexoptStatus(eq("/somewhere/app/foo/base.apk"), eq("arm"), any());
+
+        // It should keep the SDM file and runtime images.
+        doReturn(createGetDexoptStatusResult(
+                         "verify", "cloud", "location", ArtifactsLocation.SDM_NEXT_TO_DEX))
+                .when(mArtd)
+                .getDexoptStatus(eq("/somewhere/app/foo/split_0.apk"), eq("arm64"), any());
+
+        // It should only keep runtime images.
+        doReturn(createGetDexoptStatusResult("verify", "vdex", "location", ArtifactsLocation.DM))
+                .when(mArtd)
+                .getDexoptStatus(eq("/somewhere/app/foo/split_0.apk"), eq("arm"), any());
+
+        // This file is uninteresting in this test.
+        doReturn(createGetDexoptStatusResult(
+                         "run-from-apk", "unknown", "unknown", ArtifactsLocation.NONE_OR_ERROR))
+                .when(mArtd)
+                .getDexoptStatus(eq("/data/user/0/foo/1.apk"), eq("arm64"), any());
+
+        when(mSnapshot.getPackageStates()).thenReturn(Map.of(PKG_NAME_1, mPkgState1));
+        mArtManagerLocal.cleanup(mSnapshot);
+
+        verify(mArtd).cleanup(any() /* profilesToKeep */,
+                inAnyOrderDeepEquals() /* artifactsToKeep */,
+                inAnyOrderDeepEquals() /* vdexFilesToKeep */,
+                inAnyOrderDeepEquals(AidlUtils.buildSecureDexMetadataWithCompanionPaths(
+                                             "/somewhere/app/foo/base.apk", "arm64",
+                                             false /* isInDalvikCache */),
+                        AidlUtils.buildSecureDexMetadataWithCompanionPaths(
+                                "/somewhere/app/foo/base.apk", "arm", true /* isInDalvikCache */),
+                        AidlUtils.buildSecureDexMetadataWithCompanionPaths(
+                                "/somewhere/app/foo/split_0.apk", "arm64",
+                                false /* isInDalvikCache */)),
+                inAnyOrderDeepEquals(AidlUtils.buildRuntimeArtifactsPath(
+                                             PKG_NAME_1, "/somewhere/app/foo/split_0.apk", "arm64"),
+                        AidlUtils.buildRuntimeArtifactsPath(
+                                PKG_NAME_1, "/somewhere/app/foo/split_0.apk", "arm")),
+                eq(false) /* keepPreRebootStagedFiles */);
     }
 
     @Test
@@ -1417,6 +1500,64 @@ public class ArtManagerLocalTest {
     }
 
     @Test
+    public void testGetArtManagedFileStatsDmAndSdm() throws Exception {
+        // It should count the SDM file, but not runtime images.
+        doReturn(createGetDexoptStatusResult(
+                         "speed-profile", "cloud", "location", ArtifactsLocation.SDM_NEXT_TO_DEX))
+                .when(mArtd)
+                .getDexoptStatus(eq("/somewhere/app/foo/base.apk"), eq("arm64"), any());
+
+        // It should count the SDM file, but not runtime images.
+        doReturn(createGetDexoptStatusResult(
+                         "speed-profile", "cloud", "location", ArtifactsLocation.SDM_DALVIK_CACHE))
+                .when(mArtd)
+                .getDexoptStatus(eq("/somewhere/app/foo/base.apk"), eq("arm"), any());
+
+        // It should count the SDM file and runtime images.
+        doReturn(createGetDexoptStatusResult(
+                         "verify", "cloud", "location", ArtifactsLocation.SDM_NEXT_TO_DEX))
+                .when(mArtd)
+                .getDexoptStatus(eq("/somewhere/app/foo/split_0.apk"), eq("arm64"), any());
+
+        // It should only count runtime images.
+        doReturn(createGetDexoptStatusResult("verify", "vdex", "location", ArtifactsLocation.DM))
+                .when(mArtd)
+                .getDexoptStatus(eq("/somewhere/app/foo/split_0.apk"), eq("arm"), any());
+
+        // This file is uninteresting in this test.
+        doReturn(createGetDexoptStatusResult(
+                         "run-from-apk", "unknown", "unknown", ArtifactsLocation.NONE_OR_ERROR))
+                .when(mArtd)
+                .getDexoptStatus(eq("/data/user/0/foo/1.apk"), eq("arm64"), any());
+
+        // These are counted as TYPE_DEXOPT_ARTIFACT.
+        doReturn(1l << 0).when(mArtd).getSdmFileSize(
+                deepEq(AidlUtils.buildSecureDexMetadataWithCompanionPaths(
+                        "/somewhere/app/foo/base.apk", "arm64", false /* isInDalvikCache */)));
+        doReturn(1l << 1).when(mArtd).getSdmFileSize(
+                deepEq(AidlUtils.buildSecureDexMetadataWithCompanionPaths(
+                        "/somewhere/app/foo/base.apk", "arm", true /* isInDalvikCache */)));
+        doReturn(1l << 2).when(mArtd).getSdmFileSize(
+                deepEq(AidlUtils.buildSecureDexMetadataWithCompanionPaths(
+                        "/somewhere/app/foo/split_0.apk", "arm64", false /* isInDalvikCache */)));
+        doReturn(1l << 3).when(mArtd).getRuntimeArtifactsSize(
+                deepEq(AidlUtils.buildRuntimeArtifactsPath(
+                        PKG_NAME_1, "/somewhere/app/foo/split_0.apk", "arm64")));
+        doReturn(1l << 4).when(mArtd).getRuntimeArtifactsSize(
+                deepEq(AidlUtils.buildRuntimeArtifactsPath(
+                        PKG_NAME_1, "/somewhere/app/foo/split_0.apk", "arm")));
+
+        ArtManagedFileStats stats = mArtManagerLocal.getArtManagedFileStats(mSnapshot, PKG_NAME_1);
+        assertThat(stats.getTotalSizeBytesByType(ArtManagedFileStats.TYPE_DEXOPT_ARTIFACT))
+                .isEqualTo((1l << 0) + (1l << 1) + (1l << 2) + (1l << 3) + (1l << 4));
+
+        verify(mArtd, never()).getArtifactsSize(any());
+        verify(mArtd, never()).getVdexFileSize(any());
+        verify(mArtd, times(3)).getSdmFileSize(any());
+        verify(mArtd, times(2)).getRuntimeArtifactsSize(any());
+    }
+
+    @Test
     public void testCommitPreRebootStagedFiles() throws Exception {
         when(mSnapshot.getPackageStates()).thenReturn(Map.of(PKG_NAME_1, mPkgState1));
 
@@ -1466,6 +1607,57 @@ public class ArtManagerLocalTest {
         verify(mContext, never()).registerReceiver(any(), any());
     }
 
+    @Test
+    public void testFlushProfiles() throws Exception {
+        when(mActivityManager.getRunningAppProcesses())
+                .thenReturn(
+                        List.of(createProcessInfo(1000 /* pid */, "com.example.foo",
+                                        UserHandle.of(0).getUid(APP_ID), new String[] {PKG_NAME_1},
+                                        RunningAppProcessInfo.IMPORTANCE_FOREGROUND),
+                                createProcessInfo(1001 /* pid */, "com.example.foo:service1",
+                                        UserHandle.of(0).getUid(APP_ID), new String[] {PKG_NAME_1},
+                                        RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE),
+                                createProcessInfo(1002 /* pid */, "com.example.foo:service2",
+                                        UserHandle.of(0).getUid(APP_ID), new String[] {PKG_NAME_1},
+                                        RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE)),
+                        // A process goes away later.
+                        List.of(createProcessInfo(1000 /* pid */, "com.example.foo",
+                                        UserHandle.of(0).getUid(APP_ID), new String[] {PKG_NAME_1},
+                                        RunningAppProcessInfo.IMPORTANCE_FOREGROUND),
+                                createProcessInfo(1001 /* pid */, "com.example.foo:service1",
+                                        UserHandle.of(0).getUid(APP_ID), new String[] {PKG_NAME_1},
+                                        RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE)));
+
+        PrimaryCurProfilePath profilePath = AidlUtils.buildPrimaryCurProfilePath(
+                0 /* userId */, PKG_NAME_1, PrimaryDexUtils.getProfileName(null /* splitName */));
+
+        var notificationForPid1000 = mock(IArtdNotification.class);
+        var notificationForPid1001 = mock(IArtdNotification.class);
+        var notificationForPid1002 = mock(IArtdNotification.class);
+        doReturn(notificationForPid1000)
+                .when(mArtd)
+                .initProfileSaveNotification(deepEq(profilePath), eq(1000) /* pid */);
+        doReturn(notificationForPid1001)
+                .when(mArtd)
+                .initProfileSaveNotification(deepEq(profilePath), eq(1001) /* pid */);
+        doReturn(notificationForPid1002)
+                .when(mArtd)
+                .initProfileSaveNotification(deepEq(profilePath), eq(1002) /* pid */);
+        when(notificationForPid1000.wait(anyInt())).thenReturn(true);
+        when(notificationForPid1001.wait(anyInt())).thenReturn(true);
+
+        assertThat(mArtManagerLocal.flushProfiles(mSnapshot, PKG_NAME_1)).isTrue();
+
+        InOrder inOrder = inOrder(mInjector, notificationForPid1000, notificationForPid1001);
+        inOrder.verify(mInjector).kill(1000 /* pid */, OsConstants.SIGUSR1);
+        inOrder.verify(notificationForPid1000).wait(1000 /* timeoutMs */);
+        inOrder.verify(mInjector).kill(1001 /* pid */, OsConstants.SIGUSR1);
+        inOrder.verify(notificationForPid1001).wait(1000 /* timeoutMs */);
+
+        verify(mInjector, never()).kill(1002 /* pid */, OsConstants.SIGUSR1);
+        verify(notificationForPid1002, never()).wait(anyInt());
+    }
+
     private AndroidPackage createPackage(boolean multiSplit) {
         AndroidPackage pkg = mock(AndroidPackage.class);
 
@@ -1507,6 +1699,7 @@ public class ArtManagerLocalTest {
         lenient().when(pkgState.getPackageName()).thenReturn(packageName);
         lenient().when(pkgState.getPrimaryCpuAbi()).thenReturn("arm64-v8a");
         lenient().when(pkgState.getSecondaryCpuAbi()).thenReturn("armeabi-v7a");
+        lenient().when(pkgState.getAppId()).thenReturn(APP_ID);
 
         AndroidPackage pkg = createPackage(multiSplit);
         lenient().when(pkgState.getAndroidPackage()).thenReturn(pkg);
@@ -1573,5 +1766,13 @@ public class ArtManagerLocalTest {
         lenient()
                 .when(mStorageManager.getAllocatableBytes(any()))
                 .thenReturn(ArtManagerLocal.DOWNGRADE_THRESHOLD_ABOVE_LOW_BYTES);
+    }
+
+    private RunningAppProcessInfo createProcessInfo(
+            int pid, String processName, int uid, String[] pkgList, int importance) {
+        var info = new RunningAppProcessInfo(processName, pid, pkgList);
+        info.uid = uid;
+        info.importance = importance;
+        return info;
     }
 }

@@ -191,7 +191,7 @@ class HashSet {
 
   static constexpr double kDefaultMinLoadFactor = 0.4;
   static constexpr double kDefaultMaxLoadFactor = 0.7;
-  static constexpr size_t kMinBuckets = 1000;
+  static constexpr size_t kMinBuckets = 10;
 
   // If we don't own the data, this will create a new array which owns the data.
   void clear() {

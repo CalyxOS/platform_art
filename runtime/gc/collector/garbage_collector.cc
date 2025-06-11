@@ -95,6 +95,7 @@ void Iteration::Reset(GcCause gc_cause, bool clear_soft_references) {
   timings_.Reset();
   pause_times_.clear();
   duration_ns_ = 0;
+  app_slow_path_duration_ms_ = 0;
   bytes_scanned_ = 0;
   clear_soft_references_ = clear_soft_references;
   gc_cause_ = gc_cause;
@@ -268,6 +269,7 @@ void GarbageCollector::Run(GcCause gc_cause, bool clear_soft_references) {
     gc_freed_bytes_delta_->Add(current_iteration->GetFreedBytes());
     gc_duration_->Add(NsToMs(current_iteration->GetDurationNs()));
     gc_duration_delta_->Add(NsToMs(current_iteration->GetDurationNs()));
+    gc_app_slow_path_during_gc_duration_delta_->Add(current_iteration->GetAppSlowPathDurationMs());
   }
 
   // Report some metrics via the ATrace interface, to surface them in Perfetto.
@@ -323,7 +325,7 @@ void GarbageCollector::SweepArray(accounting::ObjectStack* allocations,
     StackReference<mirror::Object>* out = objects;
     for (size_t i = 0; i < count; ++i) {
       mirror::Object* const obj = objects[i].AsMirrorPtr();
-      if (kUseThreadLocalAllocationStack && obj == nullptr) {
+      if (obj == nullptr) {
         continue;
       }
       if (space->HasAddress(obj)) {
@@ -444,10 +446,10 @@ const Iteration* GarbageCollector::GetCurrentIteration() const {
 
 bool GarbageCollector::ShouldEagerlyReleaseMemoryToOS() const {
   // We have seen old kernels and custom kernel features misbehave in the
-  // presence of too much usage of MADV_FREE. So always release memory eagerly
-  // while we investigate.
-  static constexpr bool kEnableLazyRelease = false;
-  if (!kEnableLazyRelease) {
+  // presence of too much usage of MADV_FREE. So only release memory eagerly
+  // on platforms we know do not have the bug.
+  static const bool gEnableLazyRelease = !kIsTargetBuild || IsKernelVersionAtLeast(6, 0);
+  if (!gEnableLazyRelease) {
     return true;
   }
   Runtime* runtime = Runtime::Current();

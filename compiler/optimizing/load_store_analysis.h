@@ -78,7 +78,9 @@ class ReferenceInfo : public DeletableArenaObject<kArenaAllocLSA> {
 
  private:
   HInstruction* const reference_;
-  const size_t position_;  // position in HeapLocationCollector's ref_info_array_.
+  // Position in which it was inserted into the ref_infos_ vector. A smaller number means that this
+  // reference was seen before a reference with a bigger number.
+  const size_t position_;
 
   // Can only be referred to by a single name in the method.
   bool is_singleton_;
@@ -176,7 +178,7 @@ class HeapLocation : public ArenaObject<kArenaAllocLSA> {
 
 // A HeapLocationCollector collects all relevant heap locations and keeps
 // an aliasing matrix for all locations.
-class HeapLocationCollector : public HGraphVisitor {
+class HeapLocationCollector final : public HGraphVisitor {
  public:
   static constexpr size_t kHeapLocationNotFound = -1;
   // Start with a single uint32_t word. That's enough bits for pair-wise
@@ -186,7 +188,8 @@ class HeapLocationCollector : public HGraphVisitor {
   HeapLocationCollector(HGraph* graph, ScopedArenaAllocator* allocator)
       : HGraphVisitor(graph),
         allocator_(allocator),
-        ref_info_array_(allocator->Adapter(kArenaAllocLSA)),
+        ref_infos_(graph->GetCurrentInstructionId(), nullptr, allocator->Adapter(kArenaAllocLSA)),
+        ref_infos_created_(0u),
         heap_locations_(allocator->Adapter(kArenaAllocLSA)),
         aliasing_matrix_(allocator, kInitialAliasingMatrixBitVectorSize, true, kArenaAllocLSA),
         has_heap_stores_(false) {}
@@ -197,8 +200,8 @@ class HeapLocationCollector : public HGraphVisitor {
 
   void CleanUp() {
     heap_locations_.clear();
-    STLDeleteContainerPointers(ref_info_array_.begin(), ref_info_array_.end());
-    ref_info_array_.clear();
+    STLDeleteContainerPointers(ref_infos_.begin(), ref_infos_.end());
+    ref_infos_.clear();
   }
 
   size_t GetNumberOfHeapLocations() const {
@@ -227,14 +230,7 @@ class HeapLocationCollector : public HGraphVisitor {
   }
 
   ReferenceInfo* FindReferenceInfoOf(HInstruction* ref) const {
-    for (size_t i = 0; i < ref_info_array_.size(); i++) {
-      ReferenceInfo* ref_info = ref_info_array_[i];
-      if (ref_info->GetReference() == ref) {
-        DCHECK_EQ(i, ref_info->GetPosition());
-        return ref_info;
-      }
-    }
-    return nullptr;
+    return ref_infos_[ref->GetId()];
   }
 
   size_t GetFieldHeapLocation(HInstruction* object, const FieldInfo* field) const {
@@ -429,9 +425,9 @@ class HeapLocationCollector : public HGraphVisitor {
   ReferenceInfo* GetOrCreateReferenceInfo(HInstruction* instruction) {
     ReferenceInfo* ref_info = FindReferenceInfoOf(instruction);
     if (ref_info == nullptr) {
-      size_t pos = ref_info_array_.size();
-      ref_info = new (allocator_) ReferenceInfo(instruction, pos);
-      ref_info_array_.push_back(ref_info);
+      ref_info = new (allocator_) ReferenceInfo(instruction, ref_infos_created_);
+      ref_infos_created_++;
+      ref_infos_[instruction->GetId()] = ref_info;
     }
     return ref_info;
   }
@@ -462,7 +458,9 @@ class HeapLocationCollector : public HGraphVisitor {
     }
   }
 
-  void VisitFieldAccess(HInstruction* ref, const FieldInfo& field_info) {
+  void VisitFieldAccess(HFieldAccess* instruction) override {
+    HInstruction* ref = instruction->InputAt(0);
+    const FieldInfo& field_info = instruction->GetFieldInfo();
     DataType::Type type = field_info.GetFieldType();
     const uint16_t declaring_class_def_index = field_info.GetDeclaringClassDefIndex();
     const size_t offset = field_info.GetFieldOffset().SizeValue();
@@ -490,23 +488,23 @@ class HeapLocationCollector : public HGraphVisitor {
   }
 
   void VisitInstanceFieldGet(HInstanceFieldGet* instruction) override {
-    VisitFieldAccess(instruction->InputAt(0), instruction->GetFieldInfo());
     CreateReferenceInfoForReferenceType(instruction);
+    VisitFieldAccess(instruction);
   }
 
   void VisitInstanceFieldSet(HInstanceFieldSet* instruction) override {
-    VisitFieldAccess(instruction->InputAt(0), instruction->GetFieldInfo());
     has_heap_stores_ = true;
+    VisitFieldAccess(instruction);
   }
 
   void VisitStaticFieldGet(HStaticFieldGet* instruction) override {
-    VisitFieldAccess(instruction->InputAt(0), instruction->GetFieldInfo());
     CreateReferenceInfoForReferenceType(instruction);
+    VisitFieldAccess(instruction);
   }
 
   void VisitStaticFieldSet(HStaticFieldSet* instruction) override {
-    VisitFieldAccess(instruction->InputAt(0), instruction->GetFieldInfo());
     has_heap_stores_ = true;
+    VisitFieldAccess(instruction);
   }
 
   // We intentionally don't collect HUnresolvedInstanceField/HUnresolvedStaticField accesses
@@ -548,9 +546,8 @@ class HeapLocationCollector : public HGraphVisitor {
 
   void VisitInstruction(HInstruction* instruction) override {
     // Any new-instance or new-array cannot alias with references that
-    // pre-exist the new-instance/new-array. We append entries into
-    // ref_info_array_ which keeps track of the order of creation
-    // of reference values since we visit the blocks in reverse post order.
+    // pre-exist the new-instance/new-array. The entries of ref_infos_ keep track of the order of
+    // creation of reference values since we visit the blocks in reverse post order.
     //
     // By default, VisitXXX() (including VisitPhi()) calls VisitInstruction(),
     // unless VisitXXX() is overridden. VisitInstanceFieldGet() etc. above
@@ -559,7 +556,10 @@ class HeapLocationCollector : public HGraphVisitor {
   }
 
   ScopedArenaAllocator* allocator_;
-  ScopedArenaVector<ReferenceInfo*> ref_info_array_;   // All references used for heap accesses.
+  // All references used for heap accesses, accessed via instruction id.
+  ScopedArenaVector<ReferenceInfo*> ref_infos_;
+  // How many non-null ReferenceInfo* are in ref_infos_.
+  size_t ref_infos_created_;
   ScopedArenaVector<HeapLocation*> heap_locations_;    // All heap locations.
   ArenaBitVector aliasing_matrix_;    // aliasing info between each pair of locations.
   bool has_heap_stores_;    // If there is no heap stores, LSE acts as GVN with better

@@ -23,6 +23,7 @@
 #include <type_traits>
 
 #include "base/macros.h"
+#include "base/time_utils.h"
 
 namespace art HIDDEN {
 
@@ -39,6 +40,8 @@ namespace art HIDDEN {
 static constexpr uint64_t kSeqMask = (0xFFFFFFFFull << 32);
 static constexpr uint64_t kSeqLock = (0x80000000ull << 32);
 static constexpr uint64_t kSeqIncr = (0x00000001ull << 32);
+static constexpr uint kAtomicPairMaxSpins = 10'000u;
+static constexpr uint kAtomicPairSleepNanos = 5'000u;
 
 // std::pair<> is not trivially copyable and as such it is unsuitable for atomic operations.
 template <typename IntType>
@@ -69,13 +72,16 @@ ALWAYS_INLINE static inline void AtomicPairStoreRelease(AtomicPair<IntType>* pai
 ALWAYS_INLINE static inline AtomicPair<uint64_t> AtomicPairLoadAcquire(AtomicPair<uint64_t>* pair) {
   auto* key_ptr = reinterpret_cast<std::atomic_uint64_t*>(&pair->key);
   auto* val_ptr = reinterpret_cast<std::atomic_uint64_t*>(&pair->val);
-  while (true) {
+  for (uint i = 0;; ++i) {
     uint64_t key0 = key_ptr->load(std::memory_order_acquire);
     uint64_t val = val_ptr->load(std::memory_order_acquire);
     uint64_t key1 = key_ptr->load(std::memory_order_relaxed);
     uint64_t key = key0 & ~kSeqMask;
     if (LIKELY((key0 & kSeqLock) == 0 && key0 == key1)) {
       return {key, val};
+    }
+    if (UNLIKELY(i > kAtomicPairMaxSpins)) {
+      NanoSleep(kAtomicPairSleepNanos);
     }
   }
 }
@@ -86,9 +92,15 @@ ALWAYS_INLINE static inline void AtomicPairStoreRelease(AtomicPair<uint64_t>* pa
   auto* key_ptr = reinterpret_cast<std::atomic_uint64_t*>(&pair->key);
   auto* val_ptr = reinterpret_cast<std::atomic_uint64_t*>(&pair->val);
   uint64_t key = key_ptr->load(std::memory_order_relaxed);
-  do {
+  for (uint i = 0;; ++i) {
     key &= ~kSeqLock;  // Ensure that the CAS below fails if the lock bit is already set.
-  } while (!key_ptr->compare_exchange_weak(key, key | kSeqLock));
+    if (LIKELY(key_ptr->compare_exchange_weak(key, key | kSeqLock))) {
+      break;
+    }
+    if (UNLIKELY(i > kAtomicPairMaxSpins)) {
+      NanoSleep(kAtomicPairSleepNanos);
+    }
+  }
   key = (((key & kSeqMask) + kSeqIncr) & ~kSeqLock) | (value.key & ~kSeqMask);
   val_ptr->store(value.val, std::memory_order_release);
   key_ptr->store(key, std::memory_order_release);

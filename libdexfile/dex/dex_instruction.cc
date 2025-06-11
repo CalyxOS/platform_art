@@ -55,54 +55,28 @@ int32_t Instruction::GetTargetOffset() const {
   }
 }
 
-bool Instruction::CanFlowThrough() const {
-  const uint16_t* insns = reinterpret_cast<const uint16_t*>(this);
-  uint16_t insn = *insns;
-  Code opcode = static_cast<Code>(insn & 0xFF);
-  return  FlagsOf(opcode) & Instruction::kContinue;
-}
-
 size_t Instruction::SizeInCodeUnitsComplexOpcode() const {
-  const uint16_t* insns = reinterpret_cast<const uint16_t*>(this);
   // Handle special NOP encoded variable length sequences.
-  switch (*insns) {
+  uint16_t inst_data = Fetch16(0);
+  DCHECK_EQ(inst_data & 0xFF, 0) << DumpString(nullptr);
+  switch (inst_data) {
     case kPackedSwitchSignature:
-      return (4 + insns[1] * 2);
+      return (4 + Fetch16(1) * 2);
     case kSparseSwitchSignature:
-      return (2 + insns[1] * 4);
+      return (2 + Fetch16(1) * 4);
     case kArrayDataSignature: {
-      uint16_t element_size = insns[1];
-      uint32_t length = insns[2] | (((uint32_t)insns[3]) << 16);
+      uint16_t element_size = Fetch16(1);
+      uint32_t length = Fetch16(2) | ((static_cast<uint32_t>(Fetch16(3))) << 16);
       // The plus 1 is to round up for odd size and width.
-      return (4 + (element_size * length + 1) / 2);
+      uint32_t result = (4 + (element_size * length + 1) / 2);
+      // This function is used only after the `MethodVerifier` checked that the 32-bit calculation
+      // does not overflow. Let's `DCHECK()` the result against a 64-bit calculation.
+      DCHECK_EQ(result,
+                4 + (static_cast<uint64_t>(element_size) * static_cast<uint64_t>(length) + 1) / 2);
+      return result;
     }
     default:
-      if ((*insns & 0xFF) == 0) {
-        return 1;  // NOP.
-      } else {
-        LOG(FATAL) << "Unreachable: " << DumpString(nullptr);
-        UNREACHABLE();
-      }
-  }
-}
-
-size_t Instruction::CodeUnitsRequiredForSizeOfComplexOpcode() const {
-  const uint16_t* insns = reinterpret_cast<const uint16_t*>(this);
-  // Handle special NOP encoded variable length sequences.
-  switch (*insns) {
-    case kPackedSwitchSignature:
-      FALLTHROUGH_INTENDED;
-    case kSparseSwitchSignature:
-      return 2;
-    case kArrayDataSignature:
-      return 4;
-    default:
-      if ((*insns & 0xFF) == 0) {
-        return 1;  // NOP.
-      } else {
-        LOG(FATAL) << "Unreachable: " << DumpString(nullptr);
-        UNREACHABLE();
-      }
+      return 1;  // NOP.
   }
 }
 

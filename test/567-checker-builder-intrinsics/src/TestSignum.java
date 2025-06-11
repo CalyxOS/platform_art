@@ -81,7 +81,7 @@ public class TestSignum {
   /// CHECK-START: int TestSignum.signBoolean(boolean) builder (after)
   /// CHECK-NOT:                     InvokeStaticOrDirect
 
-  /// CHECK-START: int TestSignum.signBoolean(boolean) select_generator (after)
+  /// CHECK-START: int TestSignum.signBoolean(boolean) control_flow_simplifier (after)
   /// CHECK-DAG:     <<Arg:z\d+>>    ParameterValue
   /// CHECK-DAG:     <<Zero:i\d+>>   IntConstant 0
   /// CHECK-DAG:     <<One:i\d+>>    IntConstant 1
@@ -89,7 +89,7 @@ public class TestSignum {
   /// CHECK-DAG:     <<Result:i\d+>> Compare [<<Sel>>,<<Zero>>]
   /// CHECK-DAG:                     Return [<<Result>>]
 
-  /// CHECK-START: int TestSignum.signBoolean(boolean) select_generator (after)
+  /// CHECK-START: int TestSignum.signBoolean(boolean) control_flow_simplifier (after)
   /// CHECK-NOT:                     Phi
 
   /// CHECK-START: int TestSignum.signBoolean(boolean) instruction_simplifier$after_gvn (after)

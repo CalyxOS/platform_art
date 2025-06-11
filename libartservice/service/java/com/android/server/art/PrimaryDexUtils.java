@@ -60,7 +60,7 @@ public class PrimaryDexUtils {
                 .stream()
                 .map(builder -> builder.build())
                 .filter(info -> info.hasCode())
-                .collect(Collectors.toList());
+                .toList();
     }
 
     /**
@@ -74,7 +74,7 @@ public class PrimaryDexUtils {
                 .stream()
                 .map(builder -> builder.buildDetailed())
                 .filter(info -> info.hasCode())
-                .collect(Collectors.toList());
+                .toList();
     }
 
     /** Returns the basic information about a dex file specified by {@code splitName}. */

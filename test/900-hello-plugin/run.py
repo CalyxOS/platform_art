@@ -18,18 +18,6 @@
 def run(ctx, args):
   plugin = "libartagent.so" if args.O else "libartagentd.so"
 
-  # Adjust the agent path when running on device.
-  if not args.host:
-    for i, opt in enumerate(args.runtime_option):
-      if opt.startswith("-Djava.library.path="):
-        libpath = opt.split("=")[-1]
-        assert libpath.startswith("/data/nativetest"), libpath
-
-        # The linker configuration used for dalvikvm(64) in the ART APEX requires us
-        # to pass the full path to the agent to the runtime when running on device.
-        plugin = f"{libpath}/{plugin}"
-        break
-
   ctx.default_run(
       args,
       runtime_option=[

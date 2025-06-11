@@ -66,7 +66,6 @@ cc_defaults {
     srcs: ["libart_verify_classes_fuzzer.cc"],
 
     defaults: [
-        "art_defaults",
         "libart_fuzzer-defaults",
     ],
 
@@ -84,8 +83,14 @@ cc_defaults {
         ":okhttp",
         ":bouncycastle",
         ":apache-xml",
-        ":core-icu4j",
+        ":core-icu4j-fuzzer",
         ":conscrypt-fuzzer",
+    ],
+
+    whole_static_libs: [
+        // `libsigchain` must be statically linked. ASAN init uses sigaction,
+        // which makes `libsigchain.so` initialize earlier than required.
+        "libsigchain",
     ],
 }
 
@@ -116,11 +121,27 @@ cc_fuzz {
 }
 
 cc_fuzz {
-    // TODO Add a debug version
     name: "libart_verify_classes_fuzzer",
     defaults: [
+        "art_defaults",
+        "libart-runtime-for-test_static_defaults",
+        "libart-compiler_static_defaults",
         "libart_verify_classes_fuzzer-defaults",
-        "libart_static_defaults",
+    ],
+    // Can not be in defaults due to soong limitations.
+    device_common_corpus: [
+        ":art_runtest_corpus",
+        "class-verifier-corpus/*",
+    ],
+}
+
+cc_fuzz {
+    name: "libart_verify_classes_fuzzerd",
+    defaults: [
+        "art_debug_defaults",
+        "libartd-runtime-for-test_static_defaults",
+        "libartd-compiler_static_defaults",
+        "libart_verify_classes_fuzzer-defaults",
     ],
     // Can not be in defaults due to soong limitations.
     device_common_corpus: [

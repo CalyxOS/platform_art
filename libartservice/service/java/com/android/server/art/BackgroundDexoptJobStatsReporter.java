@@ -31,7 +31,6 @@ import dalvik.system.DexFile;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 /**
  * This is a helper class to report the background DexOpt job metrics to StatsD.
@@ -90,7 +89,7 @@ public class BackgroundDexoptJobStatsReporter {
                                 -> (fileResult.getExtendedStatusFlags()
                                            & DexoptResult.EXTENDED_SKIPPED_NO_DEX_CODE)
                                         == 0))
-                .collect(Collectors.toList());
+                .toList();
     }
 
     private static int getStatusForStats(

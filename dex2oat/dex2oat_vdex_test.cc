@@ -74,7 +74,6 @@ class Dex2oatVdexTest : public Dex2oatEnvironmentTest {
     // Verify the vdex file content: only the classes using public APIs should be verified.
     std::string error_msg;
     std::unique_ptr<VdexFile> vdex(VdexFile::Open(vdex_location,
-                                                  /*writable=*/false,
                                                   /*low_4gb=*/false,
                                                   &error_msg));
     // Check the vdex doesn't have dex.

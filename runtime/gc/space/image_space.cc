@@ -21,10 +21,12 @@
 #include <unistd.h>
 
 #include <array>
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <random>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "android-base/logging.h"
@@ -65,7 +67,6 @@
 #include "oat/oat_file.h"
 #include "profile/profile_compilation_info.h"
 #include "runtime.h"
-#include "runtime_globals.h"
 #include "space-inl.h"
 
 namespace art HIDDEN {
@@ -565,11 +566,6 @@ class ImageSpace::Loader {
         REQUIRES(!Locks::mutator_lock_) {
     TimingLogger logger(__PRETTY_FUNCTION__, /*precise=*/ true, VLOG_IS_ON(image));
 
-    if (gPageSize != kMinPageSize) {
-      *error_msg = "Loading app image is only supported on devices with 4K page size";
-      return nullptr;
-    }
-
     std::unique_ptr<ImageSpace> space = Init(image_filename,
                                              image_location,
                                              &logger,
@@ -670,33 +666,39 @@ class ImageSpace::Loader {
     CHECK(image_filename != nullptr);
     CHECK(image_location != nullptr);
 
-    std::unique_ptr<File> file;
+    FileWithRange file_with_range;
     {
       TimingLogger::ScopedTiming timing("OpenImageFile", logger);
-      file.reset(OS::OpenFileForReading(image_filename));
-      if (file == nullptr) {
-        *error_msg = StringPrintf("Failed to open '%s'", image_filename);
+      // Most likely, the image is compressed and doesn't really need alignment. We enforce page
+      // size alignment just in case the image is uncompressed.
+      file_with_range = OS::OpenFileDirectlyOrFromZip(
+          image_filename, OatFile::kZipSeparator, /*alignment=*/MemMap::GetPageSize(), error_msg);
+      if (file_with_range.file == nullptr) {
         return nullptr;
       }
     }
-    return Init(file.get(),
+    return Init(file_with_range.file.get(),
+                file_with_range.start,
+                file_with_range.length,
                 image_filename,
                 image_location,
-                /*profile_files=*/ {},
-                /*allow_direct_mapping=*/ true,
+                /*profile_files=*/{},
+                /*allow_direct_mapping=*/true,
                 logger,
                 image_reservation,
                 error_msg);
   }
 
   static std::unique_ptr<ImageSpace> Init(File* file,
+                                          off_t start,
+                                          size_t image_file_size,
                                           const char* image_filename,
                                           const char* image_location,
                                           const std::vector<std::string>& profile_files,
                                           bool allow_direct_mapping,
                                           TimingLogger* logger,
-                                          /*inout*/MemMap* image_reservation,
-                                          /*out*/std::string* error_msg) {
+                                          /*inout*/ MemMap* image_reservation,
+                                          /*out*/ std::string* error_msg) {
     CHECK(image_filename != nullptr);
     CHECK(image_location != nullptr);
 
@@ -705,19 +707,17 @@ class ImageSpace::Loader {
     ImageHeader image_header;
     {
       TimingLogger::ScopedTiming timing("ReadImageHeader", logger);
-      bool success = file->PreadFully(&image_header, sizeof(image_header), /*offset=*/ 0u);
+      bool success = file->PreadFully(&image_header, sizeof(image_header), start);
       if (!success || !image_header.IsValid()) {
         *error_msg = StringPrintf("Invalid image header in '%s'", image_filename);
         return nullptr;
       }
     }
     // Check that the file is larger or equal to the header size + data size.
-    const uint64_t image_file_size = static_cast<uint64_t>(file->GetLength());
     if (image_file_size < sizeof(ImageHeader) + image_header.GetDataSize()) {
-      *error_msg = StringPrintf(
-          "Image file truncated: %" PRIu64 " vs. %" PRIu64 ".",
-           image_file_size,
-           static_cast<uint64_t>(sizeof(ImageHeader) + image_header.GetDataSize()));
+      *error_msg = StringPrintf("Image file truncated: %zu vs. %" PRIu64 ".",
+                                image_file_size,
+                                sizeof(ImageHeader) + image_header.GetDataSize());
       return nullptr;
     }
 
@@ -739,10 +739,9 @@ class ImageSpace::Loader {
         RoundUp(sizeof(ImageHeader) + image_header.GetDataSize(), kElfSegmentAlignment);
     const size_t end_of_bitmap = image_bitmap_offset + bitmap_section.Size();
     if (end_of_bitmap != image_file_size) {
-      *error_msg = StringPrintf(
-          "Image file size does not equal end of bitmap: size=%" PRIu64 " vs. %zu.",
-          image_file_size,
-          end_of_bitmap);
+      *error_msg = StringPrintf("Image file size does not equal end of bitmap: size=%zu vs. %zu.",
+                                image_file_size,
+                                end_of_bitmap);
       return nullptr;
     }
 
@@ -752,15 +751,15 @@ class ImageSpace::Loader {
     // avoid reading proc maps for a mapping failure and slowing everything down.
     // For the boot image, we have already reserved the memory and we load the image
     // into the `image_reservation`.
-    MemMap map = LoadImageFile(
-        image_filename,
-        image_location,
-        image_header,
-        file->Fd(),
-        allow_direct_mapping,
-        logger,
-        image_reservation,
-        error_msg);
+    MemMap map = LoadImageFile(image_filename,
+                               image_location,
+                               image_header,
+                               file->Fd(),
+                               start,
+                               allow_direct_mapping,
+                               logger,
+                               image_reservation,
+                               error_msg);
     if (!map.IsValid()) {
       DCHECK(!error_msg->empty());
       return nullptr;
@@ -771,8 +770,8 @@ class ImageSpace::Loader {
                                               PROT_READ,
                                               MAP_PRIVATE,
                                               file->Fd(),
-                                              image_bitmap_offset,
-                                              /*low_4gb=*/ false,
+                                              start + image_bitmap_offset,
+                                              /*low_4gb=*/false,
                                               image_filename,
                                               error_msg);
     if (!image_bitmap_map.IsValid()) {
@@ -992,10 +991,11 @@ class ImageSpace::Loader {
                               const char* image_location,
                               const ImageHeader& image_header,
                               int fd,
+                              off_t start,
                               bool allow_direct_mapping,
                               TimingLogger* logger,
-                              /*inout*/MemMap* image_reservation,
-                              /*out*/std::string* error_msg) {
+                              /*inout*/ MemMap* image_reservation,
+                              /*out*/ std::string* error_msg) {
     TimingLogger::ScopedTiming timing("MapImageFile", logger);
 
     // The runtime might not be available at this point if we're running dex2oat or oatdump, in
@@ -1014,7 +1014,7 @@ class ImageSpace::Loader {
           PROT_READ | PROT_WRITE,
           MAP_PRIVATE,
           fd,
-          /*start=*/0,
+          start,
           /*low_4gb=*/true,
           image_filename,
           /*reuse=*/false,
@@ -1043,8 +1043,8 @@ class ImageSpace::Loader {
                                         PROT_READ,
                                         MAP_PRIVATE,
                                         fd,
-                                        /*start=*/ 0,
-                                        /*low_4gb=*/ false,
+                                        start,
+                                        /*low_4gb=*/false,
                                         image_filename,
                                         error_msg);
       if (!temp_map.IsValid()) {
@@ -1060,7 +1060,7 @@ class ImageSpace::Loader {
 
         Runtime::ScopedThreadPoolUsage stpu;
         ThreadPool* const pool = stpu.GetThreadPool();
-        const uint64_t start = NanoTime();
+        const uint64_t start_time = NanoTime();
         Thread* const self = Thread::Current();
         static constexpr size_t kMinBlocks = 2u;
         const bool use_parallel = pool != nullptr && image_header.GetBlockCount() >= kMinBlocks;
@@ -1091,7 +1091,7 @@ class ImageSpace::Loader {
           ScopedTrace trace("Waiting for workers");
           pool->Wait(self, true, false);
         }
-        const uint64_t time = NanoTime() - start;
+        const uint64_t time = NanoTime() - start_time;
         // Add one 1 ns to prevent possible divide by 0.
         VLOG(image) << "Decompressing image took " << PrettyDuration(time) << " ("
                     << PrettySize(static_cast<uint64_t>(map.Size()) * MsToNs(1000) / (time + 1))
@@ -1968,9 +1968,9 @@ bool ImageSpace::BootImageLayout::CompileBootclasspathElements(
   std::string art_filename = ExpandLocation(base_filename, bcp_index);
   std::string vdex_filename = ImageHeader::GetVdexLocationFromImageLocation(art_filename);
   std::string oat_filename = ImageHeader::GetOatLocationFromImageLocation(art_filename);
-  android::base::unique_fd art_fd(memfd_create_compat(art_filename.c_str(), /*flags=*/ 0));
-  android::base::unique_fd vdex_fd(memfd_create_compat(vdex_filename.c_str(), /*flags=*/ 0));
-  android::base::unique_fd oat_fd(memfd_create_compat(oat_filename.c_str(), /*flags=*/ 0));
+  android::base::unique_fd art_fd(memfd_create(art_filename.c_str(), /*flags=*/ 0));
+  android::base::unique_fd vdex_fd(memfd_create(vdex_filename.c_str(), /*flags=*/ 0));
+  android::base::unique_fd oat_fd(memfd_create(oat_filename.c_str(), /*flags=*/ 0));
   if (art_fd.get() == -1 || vdex_fd.get() == -1 || oat_fd.get() == -1) {
     *error_msg = StringPrintf("Failed to create memfd handles for compiling bootclasspath for %s",
                               boot_class_path_locations_[bcp_index].c_str());
@@ -2827,12 +2827,20 @@ class ImageSpace::BootImageLoader {
       VLOG(startup) << "Using image file " << image_filename.c_str() << " for image location "
                     << image_location << " for compiled extension";
 
-      File image_file(art_fd.release(), image_filename, /*check_usage=*/ false);
+      File image_file(art_fd.release(), image_filename, /*check_usage=*/false);
+      int64_t file_length = image_file.GetLength();
+      if (file_length < 0) {
+        *error_msg =
+            ART_FORMAT("Failed to get file length of '{}': {}", image_filename, strerror(errno));
+        return nullptr;
+      }
       std::unique_ptr<ImageSpace> result = Loader::Init(&image_file,
+                                                        /*start=*/0,
+                                                        file_length,
                                                         image_filename.c_str(),
                                                         image_location.c_str(),
                                                         profile_files,
-                                                        /*allow_direct_mapping=*/ false,
+                                                        /*allow_direct_mapping=*/false,
                                                         logger,
                                                         image_reservation,
                                                         error_msg);
@@ -2878,14 +2886,12 @@ class ImageSpace::BootImageLoader {
       TimingLogger::ScopedTiming timing("OpenOatFile", logger);
       std::string oat_filename =
           ImageHeader::GetOatLocationFromImageLocation(space->GetImageFilename());
-      std::string oat_location =
-          ImageHeader::GetOatLocationFromImageLocation(space->GetImageLocation());
 
       DCHECK_EQ(vdex_fd.get() != -1, oat_fd.get() != -1);
       if (vdex_fd.get() == -1) {
         oat_file.reset(OatFile::Open(/*zip_fd=*/-1,
                                      oat_filename,
-                                     oat_location,
+                                     oat_filename,
                                      executable_,
                                      /*low_4gb=*/false,
                                      dex_filenames,
@@ -2896,7 +2902,7 @@ class ImageSpace::BootImageLoader {
         oat_file.reset(OatFile::Open(/*zip_fd=*/-1,
                                      vdex_fd.get(),
                                      oat_fd.get(),
-                                     oat_location,
+                                     oat_filename,
                                      executable_,
                                      /*low_4gb=*/false,
                                      dex_filenames,
@@ -3249,11 +3255,6 @@ bool ImageSpace::BootImageLoader::LoadFromSystem(
     /*out*/std::string* error_msg) {
   TimingLogger logger(__PRETTY_FUNCTION__, /*precise=*/ true, VLOG_IS_ON(image));
 
-  if (gPageSize != kMinPageSize) {
-    *error_msg = "Loading boot image is only supported on devices with 4K page size";
-    return false;
-  }
-
   BootImageLayout layout(image_locations_,
                          boot_class_path_,
                          boot_class_path_locations_,
@@ -3415,31 +3416,39 @@ void ImageSpace::Dump(std::ostream& os) const {
       << ",name=\"" << GetName() << "\"]";
 }
 
-bool ImageSpace::ValidateApexVersions(const OatHeader& oat_header,
-                                      const std::string& apex_versions,
-                                      const std::string& file_location,
+bool ImageSpace::ValidateApexVersions(const OatFile& oat_file,
+                                      std::string_view runtime_apex_versions,
                                       std::string* error_msg) {
   // For a boot image, the key value store only exists in the first OAT file. Skip other OAT files.
-  if (oat_header.GetKeyValueStoreSize() == 0) {
+  if (oat_file.GetOatHeader().GetKeyValueStoreSize() == 0) {
     return true;
   }
 
-  const char* oat_apex_versions = oat_header.GetStoreValueByKey(OatHeader::kApexVersionsKey);
-  if (oat_apex_versions == nullptr) {
+  std::optional<std::string_view> oat_apex_versions = oat_file.GetApexVersions();
+  if (!oat_apex_versions.has_value()) {
     *error_msg = StringPrintf("ValidateApexVersions failed to get APEX versions from oat file '%s'",
-                              file_location.c_str());
+                              oat_file.GetLocation().c_str());
     return false;
   }
+
+  return ValidateApexVersions(
+      *oat_apex_versions, runtime_apex_versions, oat_file.GetLocation(), error_msg);
+}
+
+bool ImageSpace::ValidateApexVersions(std::string_view oat_apex_versions,
+                                      std::string_view runtime_apex_versions,
+                                      const std::string& file_location,
+                                      std::string* error_msg) {
   // For a boot image, it can be generated from a subset of the bootclasspath.
   // For an app image, some dex files get compiled with a subset of the bootclasspath.
   // For such cases, the OAT APEX versions will be a prefix of the runtime APEX versions.
-  if (!apex_versions.starts_with(oat_apex_versions)) {
-    *error_msg = StringPrintf(
-        "ValidateApexVersions found APEX versions mismatch between oat file '%s' and the runtime "
-        "(Oat file: '%s', Runtime: '%s')",
-        file_location.c_str(),
+  if (!runtime_apex_versions.starts_with(oat_apex_versions)) {
+    *error_msg = ART_FORMAT(
+        "ValidateApexVersions found APEX versions mismatch between oat file '{}' and the runtime "
+        "(Oat file: '{}', Runtime: '{}')",
+        file_location,
         oat_apex_versions,
-        apex_versions.c_str());
+        runtime_apex_versions);
     return false;
   }
   return true;
@@ -3455,10 +3464,7 @@ bool ImageSpace::ValidateOatFile(const OatFile& oat_file,
                                  ArrayRef<const std::string> dex_filenames,
                                  ArrayRef<File> dex_files,
                                  const std::string& apex_versions) {
-  if (!ValidateApexVersions(oat_file.GetOatHeader(),
-                            apex_versions,
-                            oat_file.GetLocation(),
-                            error_msg)) {
+  if (!ValidateApexVersions(oat_file, apex_versions, error_msg)) {
     return false;
   }
 

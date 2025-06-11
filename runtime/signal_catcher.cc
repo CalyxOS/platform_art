@@ -37,6 +37,7 @@
 #include "base/time_utils.h"
 #include "base/utils.h"
 #include "class_linker.h"
+#include "com_android_art_flags.h"
 #include "gc/heap.h"
 #include "jit/profile_saver.h"
 #include "palette/palette.h"
@@ -45,6 +46,9 @@
 #include "signal_set.h"
 #include "thread.h"
 #include "thread_list.h"
+#include "trace_profile.h"
+
+namespace art_flags = com::android::art::flags;
 
 namespace art HIDDEN {
 
@@ -137,6 +141,10 @@ void SignalCatcher::HandleSigQuit() {
   os << "Build type: " << (kIsDebugBuild ? "debug" : "optimized") << "\n";
 
   os << "Debug Store: " << DebugStoreGetString() << "\n";
+
+  if (art_flags::always_enable_profile_code()) {
+    os << "LongRunningMethods: " << TraceProfiler::GetLongRunningMethodsString() << "\n";
+  }
 
   runtime->DumpForSigQuit(os);
 

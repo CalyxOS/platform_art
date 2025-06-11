@@ -42,7 +42,7 @@ public class Main {
     // Load and initialize the Test class.
     Class<?> testClass = classLoader.loadClass("Test");
     Method initialize = testClass.getMethod("initialize", String.class);
-    initialize.invoke(null, args[0]);
+    initialize.invoke(null, args[1]);
 
     // Invoke Test.nativeMethodWithAnnotation().
     Method nativeMethodWithAnnotation = testClass.getMethod("nativeMethodWithAnnotation");

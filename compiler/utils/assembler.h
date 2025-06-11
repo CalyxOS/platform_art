@@ -396,6 +396,7 @@ class Assembler : public DeletableArenaObject<kArenaAllocAssembler> {
    * @details It is used by debuggers and other tools to unwind the call stack.
    */
   DebugFrameOpCodeWriterForAssembler& cfi() { return cfi_; }
+  const DebugFrameOpCodeWriterForAssembler& cfi() const { return cfi_; }
 
   ArenaAllocator* GetAllocator() {
     return buffer_.GetAllocator();

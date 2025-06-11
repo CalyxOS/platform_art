@@ -9,6 +9,8 @@
 
    invoke-static {v1, v2}, LOK;->runStraightLine(Ljava/lang/Object;Ljava/lang/Object;)V
 
+   invoke-static {v1, v2}, LOK;->runStraightLine2(Ljava/lang/Object;Ljava/lang/Object;)V
+
    invoke-static {v1, v2}, LOK;->runBalancedJoin(Ljava/lang/Object;Ljava/lang/Object;)V
 
    return-void
@@ -33,6 +35,24 @@
 
    monitor-enter v1      # 1
    monitor-enter v2      # 2
+
+   monitor-exit v2       # 2
+   monitor-exit v1       # 1
+
+   return-void
+
+.end method
+
+.method public static runStraightLine2(Ljava/lang/Object;Ljava/lang/Object;)V
+   .registers 3
+
+   invoke-static {}, LMain;->assertIsManaged()V
+
+   monitor-enter v1      # 1
+   monitor-enter v2      # 2
+
+   # No-op move should not invalidate locking information.
+   move-object v2, v2
 
    monitor-exit v2       # 2
    monitor-exit v1       # 1

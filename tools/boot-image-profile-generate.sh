@@ -15,13 +15,14 @@
 # limitations under the License.
 
 #
-# This script creates the final boot image profile (suitable to include in the platform build).
+# This script creates the framework boot image and system server profiles
+# (suitable to include in the platform build).
 # The input to the script are:
 #   1) the boot.zip file which contains the boot classpath and system server jars.
 #      This file can be obtained from running `m dist` or by configuring the device with
 #      the `art/tools/boot-image-profile-configure-device.sh` script.
-#   2) the preloaded classes denylist which specify what clases should not be preloaded
-#      in Zygote. Usually located in usually in frameworks/base/config/preloaded-classes-denylist
+#   2) the preloaded classes denylist which specify what classes should not be preloaded
+#      in Zygote. Usually located in frameworks/base/config/preloaded-classes-denylist
 #   3) a list of raw boot image profiles extracted from devices. An example how to do that is
 #      by running `art/tools/boot-image-profile-extract-profile.sh` script.
 #
@@ -58,21 +59,38 @@ shift 3
 
 # Read the profile input args.
 profman_profile_input_args=()
-while [[ "$#" -ge 1 ]] && [[ ! "$1" = '--profman-arg' ]]; do
+boot_image_profman_args=()
+system_server_profman_args=()
+while [[ "$#" -ge 1 ]]; do
+  # Read the profman args.
+  if [[ "$#" -ge 2 ]]; then
+    if [[ "$1" = '--profman-arg' ]]; then
+      boot_image_profman_args+=("$2")
+      system_server_profman_args+=("$2")
+      shift 2
+      continue
+    fi
+
+    if [[ "$1" = '--boot-image-profman-arg' ]]; then
+      boot_image_profman_args+=("$2")
+      shift 2
+      continue
+    fi
+
+    if [[ "$1" = '--system-server-profman-arg' ]]; then
+      system_server_profman_args+=("$2")
+      shift 2
+      continue
+    fi
+  fi
   profman_profile_input_args+=("--profile-file=$1")
   shift
-done
-
-# Read the profman args.
-profman_args=()
-while [[ "$#" -ge 2 ]] && [[ "$1" = '--profman-arg' ]]; do
-  profman_args+=("$2")
-  shift 2
 done
 
 OUT_BOOT_PROFILE="$OUT_DIR"/boot-image-profile.txt
 OUT_PRELOADED_CLASSES="$OUT_DIR"/preloaded-classes
 OUT_SYSTEM_SERVER="$OUT_DIR"/art-profile
+ART_JARS=("core-oj.jar core-libart.jar okhttp.jar bouncycastle.jar apache-xml.jar")
 
 echo "Changing dirs to the build top"
 cd "$ANDROID_BUILD_TOP"
@@ -88,19 +106,31 @@ echo "Processing boot image jar files"
 jar_args=()
 for entry in "$BOOT_JARS"/*
 do
-  jar_args+=("--apk=$entry")
+  # Ignore ART jars, since we want fromework related jars only.
+  jar_name=$(basename "$entry")
+  if [[ " ${ART_JARS[*]} " != *\ ${jar_name}\ * ]]; then
+    jar_args+=("--apk=$entry")
+  fi
 done
-profman_args+=("${jar_args[@]}")
 
 echo "Running profman for boot image profiles"
 # NOTE:
 # You might want to adjust the default generation arguments based on the data
 # For example, to update the selection thresholds you could specify:
-#  --method-threshold=10 \
-#  --class-threshold=10 \
-#  --preloaded-class-threshold=10 \
-#  --special-package=android:1 \
-#  --special-package=com.android.systemui:1 \
+# - For boot image profile:
+#  --boot-image-profman-arg --method-threshold=10 \
+#  --boot-image-profman-arg --class-threshold=10 \
+#  --boot-image-profman-arg --preloaded-class-threshold=10 \
+#  --boot-image-profman-arg --special-package=android:1 \
+#  --boot-image-profman-arg --special-package=com.android.systemui:1 \
+# - For System Server:
+#  --system-server-profman-arg --method-threshold=10 \
+#  --system-server-profman-arg --class-threshold=10 \
+#  --system-server-profman-arg --special-package=android:1 \
+#  --system-server-profman-arg --special-package=com.android.systemui:1 \
+# You can use --profman-arg to specify the arguments for both boot image
+# and system server.
+#
 # The threshold is percentage of total aggregation, that is, a method/class is
 # included in the profile only if it's used by at least x% of the packages.
 # (from 0% - include everything to 100% - include only the items that
@@ -109,28 +139,34 @@ echo "Running profman for boot image profiles"
 # meaning, if the methods is used by that package then the algorithm will use a
 # different selection thresholds.
 # (system server is identified as the "android" package)
+if [[ "${#boot_image_profman_args[*]}" -eq 0 ]]; then
+  boot_image_profman_args+=("--special-package=android:1")
+  boot_image_profman_args+=("--special-package=com.android.systemui:1")
+fi
+boot_image_profman_args+=("${jar_args[@]}")
 profman \
   --generate-boot-image-profile \
   "${profman_profile_input_args[@]}" \
   --out-profile-path="$OUT_BOOT_PROFILE" \
   --out-preloaded-classes-path="$OUT_PRELOADED_CLASSES" \
   --preloaded-classes-denylist="$PRELOADED_DENYLIST" \
-  --special-package=android:1 \
-  --special-package=com.android.systemui:1 \
-  "${profman_args[@]}"
+  "${boot_image_profman_args[@]}"
 
 echo "Done boot image profile"
 
 echo "Running profman for system server"
-# For system server profile we want to include everything usually
-# We also don't have a preloaded-classes file for it, so we ignore the argument.
+# We don't have a preloaded-classes nor a denylist files for System Server, so we ignore the arguments.
+# We also set the thresholds to 0 to include everything if no args are specified.
+if [[ "${#system_server_profman_args[*]}" -eq 0 ]]; then
+  system_server_profman_args+=("--method-threshold=0")
+  system_server_profman_args+=("--class-threshold=0")
+fi
 profman \
   --generate-boot-image-profile \
   "${profman_profile_input_args[@]}" \
   --out-profile-path="$OUT_SYSTEM_SERVER" \
   --apk="$SYSTEM_SERVER_JAR" \
-  --method-threshold=0 \
-  --class-threshold=0
+  "${system_server_profman_args[@]}"
 
 echo "Done system server"
 

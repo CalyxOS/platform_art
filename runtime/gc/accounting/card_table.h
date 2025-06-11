@@ -21,6 +21,7 @@
 
 #include "base/locks.h"
 #include "base/mem_map.h"
+#include "base/utils.h"
 #include "runtime_globals.h"
 
 namespace art HIDDEN {
@@ -49,8 +50,19 @@ class CardTable {
   static constexpr size_t kCardShift = 10;
   static constexpr size_t kCardSize = 1 << kCardShift;
   static constexpr uint8_t kCardClean = 0x0;
+  // Value written into the card by the write-barrier to indicate that
+  // reference(s) to some object starting in this card has been modified.
   static constexpr uint8_t kCardDirty = 0x70;
+  // Value to indicate that a dirty card is 'aged' now in the sense that it has
+  // been noticed by the GC and will be visited.
   static constexpr uint8_t kCardAged = kCardDirty - 1;
+  // Further ageing an aged card usually means clearing the card as we have
+  // already visited it when ageing it the first time. This value is used to
+  // avoid re-visiting (in the second pass of CMC marking phase) cards which
+  // contain old-to-young references and have not been dirtied since the first
+  // pass of marking. We can't simply clean these cards as they are needed later
+  // in compaction phase to update the old-to-young references.
+  static constexpr uint8_t kCardAged2 = kCardAged - 1;
 
   static CardTable* Create(const uint8_t* heap_begin, size_t heap_capacity);
   ~CardTable();
@@ -114,16 +126,32 @@ class CardTable {
                          const Visitor& visitor,
                          const ModifiedVisitor& modified);
 
-  // For every dirty at least minumum age between begin and end invoke the visitor with the
-  // specified argument. Returns how many cards the visitor was run on.
+  // For every dirty (at least minimum age) card between begin and end invoke
+  // bitmap's VisitMarkedRange() to invoke 'visitor' on every object in the
+  // card. Calls 'mod_visitor' for each such card in case the caller wants to
+  // modify the value. Returns how many cards the visitor was run on.
+  // NOTE: 'visitor' is called on one whole card at a time. Therefore,
+  // 'scan_begin' and 'scan_end' are aligned to card-size before visitor is
+  // called. Therefore visitor may get called on objects before 'scan_begin'
+  // and/or after 'scan_end'. Visitor shall detect that and act appropriately.
+  template <bool kClearCard, typename Visitor, typename ModifyVisitor>
+  size_t Scan(SpaceBitmap<kObjectAlignment>* bitmap,
+              uint8_t* scan_begin,
+              uint8_t* scan_end,
+              const Visitor& visitor,
+              const ModifyVisitor& mod_visitor,
+              const uint8_t minimum_age) REQUIRES(Locks::heap_bitmap_lock_)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
   template <bool kClearCard, typename Visitor>
   size_t Scan(SpaceBitmap<kObjectAlignment>* bitmap,
               uint8_t* scan_begin,
               uint8_t* scan_end,
               const Visitor& visitor,
-              const uint8_t minimum_age = kCardDirty)
-      REQUIRES(Locks::heap_bitmap_lock_)
-      REQUIRES_SHARED(Locks::mutator_lock_);
+              const uint8_t minimum_age = kCardDirty) REQUIRES(Locks::heap_bitmap_lock_)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    return Scan<kClearCard>(bitmap, scan_begin, scan_end, visitor, VoidFunctor(), minimum_age);
+  }
 
   // Assertion used to check the given address is covered by the card table
   void CheckAddrIsInCardTable(const uint8_t* addr) const;
@@ -169,7 +197,8 @@ class CardTable {
 class AgeCardVisitor {
  public:
   uint8_t operator()(uint8_t card) const {
-    return (card == accounting::CardTable::kCardDirty) ? card - 1 : 0;
+    return (card == accounting::CardTable::kCardDirty) ? accounting::CardTable::kCardAged
+                                                       : accounting::CardTable::kCardClean;
   }
 };
 

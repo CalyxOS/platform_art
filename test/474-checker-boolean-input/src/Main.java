@@ -27,7 +27,7 @@ public class Main {
    * we implement a suitable type analysis.
    */
 
-  /// CHECK-START: boolean Main.TestPhiAsBoolean(int) select_generator (after)
+  /// CHECK-START: boolean Main.TestPhiAsBoolean(int) control_flow_simplifier (after)
   /// CHECK-DAG:     <<Phi:i\d+>>     Phi
   /// CHECK-DAG:                      Select [{{i\d+}},{{i\d+}},<<Phi>>]
 
@@ -47,7 +47,7 @@ public class Main {
    * we implement a suitable type analysis.
    */
 
-  /// CHECK-START: boolean Main.TestAndAsBoolean(boolean, boolean) select_generator (after)
+  /// CHECK-START: boolean Main.TestAndAsBoolean(boolean, boolean) control_flow_simplifier (after)
   /// CHECK-DAG:     <<And:i\d+>>     And
   /// CHECK-DAG:                      Select [{{i\d+}},{{i\d+}},<<And>>]
 
@@ -64,7 +64,7 @@ public class Main {
    * we implement a suitable type analysis.
    */
 
-  /// CHECK-START: boolean Main.TestOrAsBoolean(boolean, boolean) select_generator (after)
+  /// CHECK-START: boolean Main.TestOrAsBoolean(boolean, boolean) control_flow_simplifier (after)
   /// CHECK-DAG:     <<Or:i\d+>>      Or
   /// CHECK-DAG:                      Select [{{i\d+}},{{i\d+}},<<Or>>]
 
@@ -81,7 +81,7 @@ public class Main {
    * we implement a suitable type analysis.
    */
 
-  /// CHECK-START: boolean Main.TestXorAsBoolean(boolean, boolean) select_generator (after)
+  /// CHECK-START: boolean Main.TestXorAsBoolean(boolean, boolean) control_flow_simplifier (after)
   /// CHECK-DAG:     <<Xor:i\d+>>     Xor
   /// CHECK-DAG:                      Select [{{i\d+}},{{i\d+}},<<Xor>>]
 

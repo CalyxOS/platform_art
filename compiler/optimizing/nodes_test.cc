@@ -197,6 +197,36 @@ TEST_F(NodeTest, AddInstruction) {
   ASSERT_TRUE(parameter->GetUses().HasExactlyOneElement());
 }
 
+TEST_F(NodeTest, InsertDuplicateInstructionAt) {
+  HBasicBlock* ret = InitEntryMainExitGraphWithReturnVoid();
+  HInstruction* const0 = graph_->GetIntConstant(0);
+  HInstruction* const1 = graph_->GetIntConstant(1);
+  HInstruction* const2 = graph_->GetIntConstant(0);
+  HInstruction* const3 = graph_->GetIntConstant(1);
+
+  // We should be able to insert a duplicate input to `HPhi`s if we want to
+  // make a graph transformation that adds another predecessor to a block.
+
+  // This used to accidentally end up with correct use information but unexpectedly
+  // using the old `HUseListNode<>` for the new use and the new one for the old use.
+  HPhi* phi1 = MakePhi(ret, {const0, const1});
+  struct AccessProtected : HVariableInputSizeInstruction {
+    using HVariableInputSizeInstruction::InputRecordAt;
+  };
+  const HUseListNode<HInstruction*>* old_use_node_before =
+      std::addressof(*(phi1->*&AccessProtected::InputRecordAt)(1u).GetUseNode());
+  phi1->InsertInputAt(1u, const1);  // Moves the old use from position 1 to position 2.
+  const HUseListNode<HInstruction*>* old_use_node_after =
+      std::addressof(*(phi1->*&AccessProtected::InputRecordAt)(2u).GetUseNode());
+  EXPECT_EQ(old_use_node_before, old_use_node_after);
+  EXPECT_EQ(1u, (phi1->*&AccessProtected::InputRecordAt)(1u).GetUseNode()->GetIndex());
+  EXPECT_EQ(2u, (phi1->*&AccessProtected::InputRecordAt)(2u).GetUseNode()->GetIndex());
+
+  // This used to hit a `DCHECK()`.
+  HPhi* phi2 = MakePhi(ret, {const2, const3, const3});
+  phi2->InsertInputAt(1u, const3);
+}
+
 TEST_F(NodeTest, ParentEnvironment) {
   HGraph* graph = CreateGraph();
   HBasicBlock* entry = new (GetAllocator()) HBasicBlock(graph);
@@ -218,7 +248,7 @@ TEST_F(NodeTest, ParentEnvironment) {
       graph->GetArtMethod(),
       /*dex_pc=*/ 0,
       /*holder=*/ nullptr);
-  parent1->CopyFrom(ArrayRef<HInstruction* const>(&parameter1, 1u));
+  parent1->CopyFrom(GetAllocator(), ArrayRef<HInstruction* const>(&parameter1, 1u));
 
   ASSERT_EQ(parameter1->GetEnvUses().SizeSlow(), 2u);
 
@@ -228,7 +258,7 @@ TEST_F(NodeTest, ParentEnvironment) {
       graph->GetArtMethod(),
       /*dex_pc=*/ 0,
       /*holder=*/ nullptr);
-  parent2->CopyFrom(ArrayRef<HInstruction* const>(&parameter1, 1u));
+  parent2->CopyFrom(GetAllocator(), ArrayRef<HInstruction* const>(&parameter1, 1u));
   parent1->SetAndCopyParentChain(GetAllocator(), parent2);
 
   // One use for parent2, and one other use for the new parent of parent1.

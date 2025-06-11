@@ -108,7 +108,7 @@ cc_defaults {
             ],
             export_shared_lib_headers: ["libbase"], // ART's macros.h depends on libbase's macros.h.
         },
-        linux_glibc: {
+        host_linux: {
             static_libs: [
                 "libcap",
             ],
@@ -180,7 +180,7 @@ cc_defaults {
                 "libcap",
             ],
         },
-        linux_glibc: {
+        host_linux: {
             whole_static_libs: [
                 "libcap",
             ],
@@ -323,10 +323,8 @@ art_cc_library_static {
     srcs: [
         "base/testing.cc",
     ],
-    header_libs: [
-        "libbase_headers",
-        "art_libartbase_headers",
-    ],
+    header_libs: ["art_libartbase_headers"],
+    export_header_lib_headers: ["art_libartbase_headers"],
 }
 
 art_cc_defaults {
@@ -337,6 +335,7 @@ art_cc_defaults {
     ],
     srcs: [
         "arch/instruction_set_test.cc",
+        "base/aconfig_flags_test.cc",
         "base/arena_allocator_test.cc",
         "base/bit_field_test.cc",
         "base/bit_memory_region_test.cc",
@@ -356,10 +355,10 @@ art_cc_defaults {
         "base/intrusive_forward_list_test.cc",
         "base/leb128_test.cc",
         "base/logging_test.cc",
-        "base/memfd_test.cc",
-        "base/membarrier_test.cc",
-        "base/memory_region_test.cc",
         "base/mem_map_test.cc",
+        "base/membarrier_test.cc",
+        "base/memfd_test.cc",
+        "base/memory_region_test.cc",
         "base/metrics/metrics_test.cc",
         "base/scoped_flock_test.cc",
         "base/time_utils_test.cc",

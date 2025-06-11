@@ -188,8 +188,14 @@ static void VMDebug_dumpLowOverheadTraceFdImpl(JNIEnv*, jclass, jint originalFd)
   TraceProfiler::Dump(fd);
 }
 
-static void VMDebug_startLowOverheadTraceImpl(JNIEnv*, jclass) {
+static void VMDebug_startLowOverheadTraceForAllMethodsImpl(JNIEnv*, jclass) {
   TraceProfiler::Start();
+}
+
+static void VMDebug_startLowOverheadTraceForLongRunningMethodsImpl(JNIEnv*,
+                                                                   jclass,
+                                                                   jlong traceDuration) {
+  TraceProfiler::StartTraceLongRunningMethods(traceDuration);
 }
 
 static jboolean VMDebug_isDebuggerConnected(JNIEnv*, jclass) {
@@ -312,9 +318,9 @@ static jlong VMDebug_countInstancesOfClass(JNIEnv* env,
 
 static jobject VMDebug_getExecutableMethodFileOffsetsNative(JNIEnv* env,
                                                             jclass,
-                                                            jobject javaMethod) {
+                                                            jobject javaExecutable) {
   ScopedObjectAccess soa(env);
-  ObjPtr<mirror::Executable> m = soa.Decode<mirror::Executable>(javaMethod);
+  ObjPtr<mirror::Executable> m = soa.Decode<mirror::Executable>(javaExecutable);
   if (m == nullptr) {
     soa.Self()->ThrowNewExceptionF("Ljava/lang/RuntimeException;",
                                    "Could not find mirror::Executable for supplied jobject");
@@ -698,14 +704,15 @@ static JNINativeMethod gMethods[] = {
     NATIVE_METHOD(VMDebug, addApplication, "(Ljava/lang/String;)V"),
     NATIVE_METHOD(VMDebug, removeApplication, "(Ljava/lang/String;)V"),
     NATIVE_METHOD(VMDebug, setUserId, "(I)V"),
-    NATIVE_METHOD(VMDebug, startLowOverheadTraceImpl, "()V"),
+    NATIVE_METHOD(VMDebug, startLowOverheadTraceForAllMethodsImpl, "()V"),
+    NATIVE_METHOD(VMDebug, startLowOverheadTraceForLongRunningMethodsImpl, "(J)V"),
     NATIVE_METHOD(VMDebug, stopLowOverheadTraceImpl, "()V"),
     NATIVE_METHOD(VMDebug, dumpLowOverheadTraceImpl, "(Ljava/lang/String;)V"),
     NATIVE_METHOD(VMDebug, dumpLowOverheadTraceFdImpl, "(I)V"),
     NATIVE_METHOD(
         VMDebug,
         getExecutableMethodFileOffsetsNative,
-        "(Ljava/lang/reflect/Method;)Ldalvik/system/VMDebug$ExecutableMethodFileOffsets;"),
+        "(Ljava/lang/reflect/Executable;)Ldalvik/system/VMDebug$ExecutableMethodFileOffsets;"),
 };
 
 void register_dalvik_system_VMDebug(JNIEnv* env) {

@@ -31,6 +31,7 @@
 #include "base/pointer_size.h"
 #include "base/runtime_debug.h"
 #include "dex/dex_file_structs.h"
+#include "dex/dex_file_types.h"
 #include "dex/modifiers.h"
 #include "dex/primitive.h"
 #include "interpreter/mterp/nterp.h"
@@ -470,12 +471,19 @@ class EXPORT ArtMethod final {
     return IsCriticalNative(GetAccessFlags());
   }
 
-  static bool IsCriticalNative(uint32_t access_flags) {
+  static bool IsCriticalNative([[maybe_unused]] uint32_t access_flags) {
+#ifdef ART_USE_RESTRICTED_MODE
+    // Return false to treat all critical native methods as normal native methods instead, i.e.:
+    // will use the generic JNI trampoline instead.
+    // TODO(Simulator): support critical native methods
+    return false;
+#else
     // The presence of the annotation is checked by ClassLinker and recorded in access flags.
     // The kAccCriticalNative flag value is used with a different meaning for non-native methods,
     // so we need to check the kAccNative flag as well.
     constexpr uint32_t mask = kAccCriticalNative | kAccNative;
     return (access_flags & mask) == mask;
+#endif
   }
 
   // Returns true if the method is managed (not native).
@@ -906,18 +914,20 @@ class EXPORT ArtMethod final {
   }
 
   bool HasCodeItem() REQUIRES_SHARED(Locks::mutator_lock_) {
-    uint32_t access_flags = GetAccessFlags();
-    return !IsNative(access_flags) &&
-           !IsAbstract(access_flags) &&
-           !IsDefaultConflicting(access_flags) &&
-           !IsRuntimeMethod() &&
-           !IsProxyMethod();
+    return NeedsCodeItem(GetAccessFlags()) && !IsRuntimeMethod() && !IsProxyMethod();
   }
 
-  // We need to explicitly indicate whether the code item is obtained from the compact dex file,
-  // because in JVMTI, we obtain the code item from the standard dex file to update the method.
-  void SetCodeItem(const dex::CodeItem* code_item, bool is_compact_dex_code_item)
-      REQUIRES_SHARED(Locks::mutator_lock_);
+  static bool NeedsCodeItem(uint32_t access_flags) {
+    return !IsNative(access_flags) &&
+           !IsAbstract(access_flags) &&
+           !IsDefaultConflicting(access_flags);
+  }
+
+  void SetCodeItem(const dex::CodeItem* code_item)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    DCHECK(HasCodeItem());
+    SetDataPtrSize(code_item, kRuntimePointerSize);
+  }
 
   // Is this a hand crafted method used for something like describing callee saves?
   bool IsCalleeSaveMethod() REQUIRES_SHARED(Locks::mutator_lock_);
@@ -965,6 +975,8 @@ class EXPORT ArtMethod final {
   int32_t GetLineNumFromDexPC(uint32_t dex_pc) REQUIRES_SHARED(Locks::mutator_lock_);
 
   const dex::ProtoId& GetPrototype() REQUIRES_SHARED(Locks::mutator_lock_);
+
+  const dex::ProtoIndex GetProtoIndex() REQUIRES_SHARED(Locks::mutator_lock_);
 
   const dex::TypeList* GetParameterTypeList() REQUIRES_SHARED(Locks::mutator_lock_);
 
@@ -1037,7 +1049,13 @@ class EXPORT ArtMethod final {
 
   ALWAYS_INLINE uint32_t GetImtIndex() REQUIRES_SHARED(Locks::mutator_lock_);
 
-  void CalculateAndSetImtIndex() REQUIRES_SHARED(Locks::mutator_lock_);
+  void SetImtIndex(uint16_t imt_index) REQUIRES_SHARED(Locks::mutator_lock_) {
+    imt_index_ = imt_index;
+  }
+
+  void SetHotnessCount(uint16_t hotness_count) REQUIRES_SHARED(Locks::mutator_lock_) {
+    hotness_count_ = hotness_count;
+  }
 
   static constexpr MemberOffset HotnessCountOffset() {
     return MemberOffset(OFFSETOF_MEMBER(ArtMethod, hotness_count_));
@@ -1126,7 +1144,8 @@ class EXPORT ArtMethod final {
     // Non-abstract methods: The hotness we measure for this method. Not atomic,
     // as we allow missing increments: if the method is hot, we will see it eventually.
     uint16_t hotness_count_;
-    // Abstract methods: IMT index.
+    // Abstract interface methods: IMT index.
+    // Abstract class (non-interface) methods: Unused (zero-initialized).
     uint16_t imt_index_;
   };
 

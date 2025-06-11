@@ -37,7 +37,7 @@ void PreciseHiddenApiFinder::RunInternal(
     const std::function<void(VeridexResolver*, const ClassAccessor::Method&)>& action) {
   for (const std::unique_ptr<VeridexResolver>& resolver : resolvers) {
     for (ClassAccessor accessor : resolver->GetDexFile().GetClasses()) {
-      if (class_filter.Matches(accessor.GetDescriptor())) {
+      if (class_filter.Matches(accessor.GetDescriptorView())) {
         for (const ClassAccessor::Method& method : accessor.GetMethods()) {
           if (method.GetCodeItem() != nullptr) {
             action(resolver.get(), method);

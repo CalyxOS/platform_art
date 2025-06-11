@@ -70,7 +70,7 @@ void InstructionCodeGeneratorX86_64::VisitVecReplicateScalar(HVecReplicateScalar
     case DataType::Type::kUint8:
     case DataType::Type::kInt8:
       DCHECK_EQ(16u, instruction->GetVectorLength());
-      __ movd(dst, locations->InAt(0).AsRegister<CpuRegister>(), /*64-bit*/ false);
+      __ movd(dst, locations->InAt(0).AsRegister<CpuRegister>());
       __ punpcklbw(dst, dst);
       __ punpcklwd(dst, dst);
       __ pshufd(dst, dst, Immediate(0));
@@ -78,18 +78,18 @@ void InstructionCodeGeneratorX86_64::VisitVecReplicateScalar(HVecReplicateScalar
     case DataType::Type::kUint16:
     case DataType::Type::kInt16:
       DCHECK_EQ(8u, instruction->GetVectorLength());
-      __ movd(dst, locations->InAt(0).AsRegister<CpuRegister>(), /*64-bit*/ false);
+      __ movd(dst, locations->InAt(0).AsRegister<CpuRegister>());
       __ punpcklwd(dst, dst);
       __ pshufd(dst, dst, Immediate(0));
       break;
     case DataType::Type::kInt32:
       DCHECK_EQ(4u, instruction->GetVectorLength());
-      __ movd(dst, locations->InAt(0).AsRegister<CpuRegister>(), /*64-bit*/ false);
+      __ movd(dst, locations->InAt(0).AsRegister<CpuRegister>());
       __ pshufd(dst, dst, Immediate(0));
       break;
     case DataType::Type::kInt64:
       DCHECK_EQ(2u, instruction->GetVectorLength());
-      __ movd(dst, locations->InAt(0).AsRegister<CpuRegister>(), /*64-bit*/ true);
+      __ movq(dst, locations->InAt(0).AsRegister<CpuRegister>());
       __ punpcklqdq(dst, dst);
       break;
     case DataType::Type::kFloat32:
@@ -145,11 +145,11 @@ void InstructionCodeGeneratorX86_64::VisitVecExtractScalar(HVecExtractScalar* in
       UNREACHABLE();
     case DataType::Type::kInt32:
       DCHECK_EQ(4u, instruction->GetVectorLength());
-      __ movd(locations->Out().AsRegister<CpuRegister>(), src, /*64-bit*/ false);
+      __ movd(locations->Out().AsRegister<CpuRegister>(), src);
       break;
     case DataType::Type::kInt64:
       DCHECK_EQ(2u, instruction->GetVectorLength());
-      __ movd(locations->Out().AsRegister<CpuRegister>(), src, /*64-bit*/ true);
+      __ movq(locations->Out().AsRegister<CpuRegister>(), src);
       break;
     case DataType::Type::kFloat32:
     case DataType::Type::kFloat64:
@@ -1118,7 +1118,7 @@ void InstructionCodeGeneratorX86_64::VisitVecSetScalars(HVecSetScalars* instruct
       break;
     case DataType::Type::kInt64:
       DCHECK_EQ(2u, instruction->GetVectorLength());
-      __ movd(dst, locations->InAt(0).AsRegister<CpuRegister>());  // is 64-bit
+      __ movq(dst, locations->InAt(0).AsRegister<CpuRegister>());
       break;
     case DataType::Type::kFloat32:
       DCHECK_EQ(4u, instruction->GetVectorLength());

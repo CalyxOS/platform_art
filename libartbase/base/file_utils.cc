@@ -88,7 +88,6 @@ static constexpr const char* kAndroidExpandEnvVar = "ANDROID_EXPAND";
 static constexpr const char* kAndroidExpandDefaultPath = "/mnt/expand";
 static constexpr const char* kAndroidArtRootEnvVar = "ANDROID_ART_ROOT";
 static constexpr const char* kAndroidConscryptRootEnvVar = "ANDROID_CONSCRYPT_ROOT";
-static constexpr const char* kAndroidI18nRootEnvVar = "ANDROID_I18N_ROOT";
 static constexpr const char* kApexDefaultPath = "/apex/";
 static constexpr const char* kArtApexDataEnvVar = "ART_APEX_DATA";
 static constexpr const char* kBootImageStem = "boot";
@@ -716,6 +715,15 @@ std::string GetDmFilename(const std::string& dex_location) {
   return ReplaceFileExtension(dex_location, kDmExtension);
 }
 
+std::string GetSdmFilename(const std::string& dex_location, InstructionSet isa) {
+  return ReplaceFileExtension(dex_location,
+                              StringPrintf("%s%s", GetInstructionSetString(isa), kSdmExtension));
+}
+
+std::string GetSdcFilename(const std::string& oat_location) {
+  return ReplaceFileExtension(oat_location, kSdcExtension);
+}
+
 // check for the file in /system, followed by /system_ext
 std::string GetSystemOdexFilenameForApex(std::string_view location, InstructionSet isa) {
   DCHECK(LocationIsOnApex(location));
@@ -853,10 +861,6 @@ bool LocationIsOnSystemExtFramework(std::string_view full_path) {
 
 bool LocationIsOnConscryptModule(std::string_view full_path) {
   return IsLocationOn(full_path, kAndroidConscryptRootEnvVar, kAndroidConscryptApexDefaultPath);
-}
-
-bool LocationIsOnI18nModule(std::string_view full_path) {
-  return IsLocationOn(full_path, kAndroidI18nRootEnvVar, kAndroidI18nApexDefaultPath);
 }
 
 bool LocationIsOnApex(std::string_view full_path) {

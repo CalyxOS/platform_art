@@ -415,7 +415,6 @@ class CodeGeneratorX86_64 : public CodeGenerator {
   // Generate code to invoke a runtime entry point.
   void InvokeRuntime(QuickEntrypointEnum entrypoint,
                      HInstruction* instruction,
-                     uint32_t dex_pc,
                      SlowPathCode* slow_path = nullptr) override;
 
   // Generate code to invoke a runtime entry point, but do not record

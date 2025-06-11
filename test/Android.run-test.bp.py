@@ -147,7 +147,7 @@ def main():
         }}
         """))
 
-      name = "art-run-test-{mode}-data-merged".format(mode=mode)
+      name = "art-test-{mode}".format(mode=mode)
       srcs = ("\n"+" "*16).join('":{}-tmp",'.format(n) for n in names)
       deps = ("\n"+" "*16).join('"{}",'.format(n) for n in names)
       f.write(textwrap.dedent(f"""

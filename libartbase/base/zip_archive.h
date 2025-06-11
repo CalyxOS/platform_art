@@ -18,10 +18,9 @@
 #define ART_LIBARTBASE_BASE_ZIP_ARCHIVE_H_
 
 #include <stdint.h>
+
 #include <memory>
 #include <string>
-
-#include <android-base/logging.h>
 
 #include "globals.h"
 #include "mem_map.h"
@@ -67,11 +66,12 @@ class ZipEntry {
                               std::string* error_msg,
                               size_t alignment);
 
-  uint32_t GetUncompressedLength();
-  uint32_t GetCrc32();
+  uint32_t GetUncompressedLength() const;
+  uint32_t GetCrc32() const;
 
-  bool IsUncompressed();
+  bool IsUncompressed() const;
   bool IsAlignedTo(size_t alignment) const;
+  off_t GetOffset() const;
 
  private:
   ZipEntry(ZipArchiveHandle handle,
@@ -100,6 +100,10 @@ class ZipArchive {
 
   ZipEntry* Find(const char* name, std::string* error_msg) const;
 
+  // Same as Find, but doesn't return an error message if the entry is not found. The callers
+  // should expect that the returned pointer is null while the error message is empty.
+  ZipEntry* FindOrNull(const char* name, std::string* error_msg) const;
+
   ~ZipArchive();
 
  private:
@@ -109,6 +113,8 @@ class ZipArchive {
                                         std::string* error_msg);
 
   explicit ZipArchive(ZipArchiveHandle handle) : handle_(handle) {}
+
+  ZipEntry* FindImpl(const char* name, bool allow_entry_not_found, std::string* error_msg) const;
 
   friend class ZipEntry;
 

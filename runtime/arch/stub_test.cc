@@ -1565,7 +1565,10 @@ static void TestFields(Thread* self, StubTest* test, Primitive::Type test_type) 
   // Play with it...
 
   // Static fields.
-  for (ArtField& f : c->GetSFields()) {
+  for (ArtField& f : c->GetFields()) {
+    if (!f.IsStatic()) {
+      continue;
+    }
     Primitive::Type type = f.GetTypeAsPrimitiveType();
     if (test_type != type) {
      continue;
@@ -1601,7 +1604,10 @@ static void TestFields(Thread* self, StubTest* test, Primitive::Type test_type) 
   }
 
   // Instance fields.
-  for (ArtField& f : c->GetIFields()) {
+  for (ArtField& f : c->GetFields()) {
+    if (f.IsStatic()) {
+      continue;
+    }
     Primitive::Type type = f.GetTypeAsPrimitiveType();
     if (test_type != type) {
       continue;

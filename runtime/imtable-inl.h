@@ -33,65 +33,52 @@ static constexpr uint32_t kImTableHashCoefficientClass = 427;
 static constexpr uint32_t kImTableHashCoefficientName = 16;
 static constexpr uint32_t kImTableHashCoefficientSignature = 14;
 
-inline void ImTable::GetImtHashComponents(ArtMethod* method,
+inline void ImTable::GetImtHashComponents(const DexFile& dex_file,
+                                          uint32_t dex_method_index,
                                           uint32_t* class_hash,
                                           uint32_t* name_hash,
                                           uint32_t* signature_hash) {
   if (kImTableHashUseName) {
-    if (method->IsProxyMethod()) {
-      *class_hash = 0;
-      *name_hash = 0;
-      *signature_hash = 0;
-      return;
-    }
-
-    const DexFile* dex_file = method->GetDexFile();
-    const dex::MethodId& method_id = dex_file->GetMethodId(method->GetDexMethodIndex());
+    const dex::MethodId& method_id = dex_file.GetMethodId(dex_method_index);
 
     // Class descriptor for the class component.
-    *class_hash = ComputeModifiedUtf8Hash(dex_file->GetMethodDeclaringClassDescriptor(method_id));
+    *class_hash = ComputeModifiedUtf8Hash(dex_file.GetMethodDeclaringClassDescriptor(method_id));
 
     // Method name for the method component.
-    *name_hash = ComputeModifiedUtf8Hash(dex_file->GetMethodName(method_id));
+    *name_hash = ComputeModifiedUtf8Hash(dex_file.GetMethodName(method_id));
 
-    const dex::ProtoId& proto_id = dex_file->GetMethodPrototype(method_id);
+    const dex::ProtoId& proto_id = dex_file.GetMethodPrototype(method_id);
 
     // Read the proto for the signature component.
     uint32_t tmp = ComputeModifiedUtf8Hash(
-        dex_file->GetTypeDescriptor(dex_file->GetTypeId(proto_id.return_type_idx_)));
+        dex_file.GetTypeDescriptor(dex_file.GetTypeId(proto_id.return_type_idx_)));
 
     // Mix in the argument types.
     // Note: we could consider just using the shorty. This would be faster, at the price of
     //       potential collisions.
-    const dex::TypeList* param_types = dex_file->GetProtoParameters(proto_id);
+    const dex::TypeList* param_types = dex_file.GetProtoParameters(proto_id);
     if (param_types != nullptr) {
       for (size_t i = 0; i != param_types->Size(); ++i) {
         const dex::TypeItem& type = param_types->GetTypeItem(i);
         tmp = 31 * tmp + ComputeModifiedUtf8Hash(
-            dex_file->GetTypeDescriptor(dex_file->GetTypeId(type.type_idx_)));
+            dex_file.GetTypeDescriptor(dex_file.GetTypeId(type.type_idx_)));
       }
     }
 
     *signature_hash = tmp;
     return;
   } else {
-    *class_hash = method->GetDexMethodIndex();
+    *class_hash = dex_method_index;
     *name_hash = 0;
     *signature_hash = 0;
     return;
   }
 }
 
-inline uint32_t ImTable::GetImtIndex(ArtMethod* method) {
-  DCHECK(!method->IsCopied());
-  if (!method->IsAbstract()) {
-    // For default methods, where we cannot store the imt_index, we use the
-    // method_index instead. We mask it with the closest power of two to
-    // simplify the interpreter.
-    return method->GetMethodIndex() & (ImTable::kSizeTruncToPowerOfTwo - 1);
-  }
+inline uint32_t ImTable::GetImtIndexForAbstractMethod(const DexFile& dex_file,
+                                                      uint32_t dex_method_index) {
   uint32_t class_hash, name_hash, signature_hash;
-  GetImtHashComponents(method, &class_hash, &name_hash, &signature_hash);
+  GetImtHashComponents(dex_file, dex_method_index, &class_hash, &name_hash, &signature_hash);
 
   uint32_t mixed_hash;
   if (!kImTableHashUseCoefficients) {
@@ -103,6 +90,18 @@ inline uint32_t ImTable::GetImtIndex(ArtMethod* method) {
   }
 
   return mixed_hash % ImTable::kSize;
+}
+
+inline uint32_t ImTable::GetImtIndex(ArtMethod* method) {
+  DCHECK(!method->IsCopied());
+  DCHECK(!method->IsProxyMethod());
+  if (!method->IsAbstract()) {
+    // For default methods, where we cannot store the imt_index, we use the
+    // method_index instead. We mask it with the closest power of two to
+    // simplify the interpreter.
+    return method->GetMethodIndex() & (ImTable::kSizeTruncToPowerOfTwo - 1);
+  }
+  return GetImtIndexForAbstractMethod(*method->GetDexFile(), method->GetDexMethodIndex());
 }
 
 }  // namespace art

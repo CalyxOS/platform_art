@@ -91,31 +91,6 @@ void RegisterLine::MarkRefsAsInitialized(MethodVerifier* verifier, uint32_t vsrc
   DCHECK_GT(changed, 0u);
 }
 
-void RegisterLine::MarkAllRegistersAsConflicts(MethodVerifier* verifier) {
-  uint16_t conflict_type_id = verifier->GetRegTypeCache()->Conflict().GetId();
-  for (uint32_t i = 0; i < num_regs_; i++) {
-    line_[i] = conflict_type_id;
-  }
-}
-
-void RegisterLine::MarkAllRegistersAsConflictsExcept(MethodVerifier* verifier, uint32_t vsrc) {
-  uint16_t conflict_type_id = verifier->GetRegTypeCache()->Conflict().GetId();
-  for (uint32_t i = 0; i < num_regs_; i++) {
-    if (i != vsrc) {
-      line_[i] = conflict_type_id;
-    }
-  }
-}
-
-void RegisterLine::MarkAllRegistersAsConflictsExceptWide(MethodVerifier* verifier, uint32_t vsrc) {
-  uint16_t conflict_type_id = verifier->GetRegTypeCache()->Conflict().GetId();
-  for (uint32_t i = 0; i < num_regs_; i++) {
-    if ((i != vsrc) && (i != (vsrc + 1))) {
-      line_[i] = conflict_type_id;
-    }
-  }
-}
-
 std::string RegisterLine::Dump(MethodVerifier* verifier) const {
   std::string result;
   for (size_t i = 0; i < num_regs_; i++) {
@@ -141,9 +116,9 @@ void RegisterLine::CopyResultRegister1(MethodVerifier* verifier, uint32_t vdst, 
     verifier->Fail(VERIFY_ERROR_BAD_CLASS_HARD)
         << "copyRes1 v" << vdst << "<- result0"  << " type=" << type;
   } else {
-    DCHECK(verifier->GetRegTypeCache()->GetFromId(result_[1]).IsUndefined());
+    DCHECK_EQ(result_[1], RegTypeCache::kUndefinedCacheId);
     SetRegisterType<LockOp::kClear>(vdst, type);
-    result_[0] = verifier->GetRegTypeCache()->Undefined().GetId();
+    result_[0] = RegTypeCache::kUndefinedCacheId;
   }
 }
 
@@ -160,26 +135,24 @@ void RegisterLine::CopyResultRegister2(MethodVerifier* verifier, uint32_t vdst) 
   } else {
     DCHECK(type_l.CheckWidePair(type_h));  // Set should never allow this case
     SetRegisterTypeWide(vdst, type_l, type_h);  // also sets the high
-    result_[0] = verifier->GetRegTypeCache()->Undefined().GetId();
-    result_[1] = verifier->GetRegTypeCache()->Undefined().GetId();
+    result_[0] = RegTypeCache::kUndefinedCacheId;
+    result_[1] = RegTypeCache::kUndefinedCacheId;
   }
 }
 
 static constexpr uint32_t kVirtualNullRegister = std::numeric_limits<uint32_t>::max();
 
-void RegisterLine::PushMonitor(MethodVerifier* verifier, uint32_t reg_idx, int32_t insn_idx) {
-  const RegType& reg_type = GetRegisterType(verifier, reg_idx);
-  if (!reg_type.IsReferenceTypes()) {
-    verifier->Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "monitor-enter on non-object ("
-        << reg_type << ")";
-  } else if (monitors_.size() >= kMaxMonitorStackDepth) {
+void RegisterLine::PushMonitor(
+    MethodVerifier* verifier, uint32_t vreg, const RegType& reg_type, int32_t insn_idx) {
+  DCHECK_EQ(reg_type.GetId(), GetRegisterTypeId(vreg));
+  if (monitors_.size() >= kMaxMonitorStackDepth) {
     verifier->Fail(VERIFY_ERROR_LOCKING);
     if (kDumpLockFailures) {
       VLOG(verifier) << "monitor-enter stack overflow while verifying "
                      << verifier->GetMethodReference().PrettyMethod();
     }
   } else {
-    if (SetRegToLockDepth(reg_idx, monitors_.size())) {
+    if (SetRegToLockDepth(vreg, monitors_.size())) {
       // Null literals can establish aliases that we can't easily track. As such, handle the zero
       // case as the 2^32-1 register (which isn't available in dex bytecode).
       if (reg_type.IsZero()) {
@@ -190,18 +163,16 @@ void RegisterLine::PushMonitor(MethodVerifier* verifier, uint32_t reg_idx, int32
     } else {
       verifier->Fail(VERIFY_ERROR_LOCKING);
       if (kDumpLockFailures) {
-        VLOG(verifier) << "unexpected monitor-enter on register v" <<  reg_idx << " in "
+        VLOG(verifier) << "unexpected monitor-enter on register v" <<  vreg << " in "
                        << verifier->GetMethodReference().PrettyMethod();
       }
     }
   }
 }
 
-void RegisterLine::PopMonitor(MethodVerifier* verifier, uint32_t reg_idx) {
-  const RegType& reg_type = GetRegisterType(verifier, reg_idx);
-  if (!reg_type.IsReferenceTypes()) {
-    verifier->Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "monitor-exit on non-object (" << reg_type << ")";
-  } else if (monitors_.empty()) {
+void RegisterLine::PopMonitor(MethodVerifier* verifier, uint32_t vreg, const RegType& reg_type) {
+  DCHECK_EQ(reg_type.GetId(), GetRegisterTypeId(vreg));
+  if (monitors_.empty()) {
     verifier->Fail(VERIFY_ERROR_LOCKING);
     if (kDumpLockFailures) {
       VLOG(verifier) << "monitor-exit stack underflow while verifying "
@@ -210,14 +181,14 @@ void RegisterLine::PopMonitor(MethodVerifier* verifier, uint32_t reg_idx) {
   } else {
     monitors_.pop_back();
 
-    bool success = IsSetLockDepth(reg_idx, monitors_.size());
+    bool success = IsSetLockDepth(vreg, monitors_.size());
 
     if (!success && reg_type.IsZero()) {
       // Null literals can establish aliases that we can't easily track. As such, handle the zero
       // case as the 2^32-1 register (which isn't available in dex bytecode).
       success = IsSetLockDepth(kVirtualNullRegister, monitors_.size());
       if (success) {
-        reg_idx = kVirtualNullRegister;
+        vreg = kVirtualNullRegister;
       }
     }
 
@@ -230,7 +201,7 @@ void RegisterLine::PopMonitor(MethodVerifier* verifier, uint32_t reg_idx) {
     } else {
       // Record the register was unlocked. This clears all aliases, thus it will also clear the
       // null lock, if necessary.
-      ClearRegToLockDepth(reg_idx, monitors_.size());
+      ClearRegToLockDepth(vreg, monitors_.size());
     }
   }
 }
@@ -283,7 +254,7 @@ bool RegisterLine::MergeRegisters(MethodVerifier* verifier, const RegisterLine* 
           incoming_line->allocation_dex_pcs_ != nullptr &&
           allocation_dex_pcs_[idx] != incoming_line->allocation_dex_pcs_[idx] &&
           needs_allocation_dex_pc()) {
-        line_[idx] = verifier->GetRegTypeCache()->Conflict().GetId();
+        line_[idx] = RegTypeCache::kConflictCacheId;
       }
     }
   }

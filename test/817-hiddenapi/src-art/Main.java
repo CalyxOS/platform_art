@@ -39,7 +39,7 @@ public class Main {
     m.invoke(null);
 
     // Create a new native library which 'childLoader' can load.
-    String absoluteLibraryPath = getNativeLibFileName(args[0]);
+    String absoluteLibraryPath = getNativeLibFileName(args[1]);
 
     // Do the test for JNI code.
     m = cls.getDeclaredMethod("testNative", String.class);

@@ -416,7 +416,7 @@ inline ArtField* ResolveFieldWithAccessChecks(Thread* self,
     return nullptr;
   }
 
-  if (resolve_field_type != 0u) {
+  if (resolve_field_type != 0u && caller->GetDeclaringClass()->HasTypeChecksFailure()) {
     StackArtFieldHandleScope<1> rhs(self);
     ReflectiveHandle<ArtField> field_handle(rhs.NewHandle(resolved_field));
     if (resolved_field->ResolveType().IsNull()) {
@@ -632,6 +632,13 @@ ALWAYS_INLINE ArtMethod* FindSuperMethodToCall(uint32_t method_idx,
   }
 
   if (referenced_class->IsInterface()) {
+    if (!resolved_method->GetDeclaringClass()->IsInterface()) {
+      // invoke-super from interface should not resolve to Object methods.
+      DCHECK(resolved_method->GetDeclaringClass()->IsObjectClass());
+      ThrowIncompatibleClassChangeError(
+          kSuper, resolved_method->GetInvokeType(), resolved_method, referrer);
+      return nullptr;
+    }
     // TODO We can do better than this for a (compiled) fastpath.
     ArtMethod* found_method = referenced_class->FindVirtualMethodForInterfaceSuper(
         resolved_method, linker->GetImagePointerSize());

@@ -16,5 +16,9 @@
 
 
 def run(ctx, args):
-  # Use a profile to put specific classes in the app image.
-  ctx.default_run(args, profile=True)
+  # Use a profile to put specific classes in the app image. Also run tests with different
+  # dex2oat options to cover cases with varying .rodata offsets.
+  # Since a build ID section appears before .rodata in an oat file, .rodata offset depends on
+  # presence of build id section in the file.
+  ctx.default_run(args, profile=True, compiler_only_option=["--generate-build-id"])
+  ctx.default_run(args, profile=True, compiler_only_option=["--no-generate-build-id"])
